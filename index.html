@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Looking Glass</title>
+<!--
+  ============================================================
+  LOOKING GLASS — Student App (first connected version)
+  ------------------------------------------------------------
+  STEP 1: paste your two Supabase values in the CONFIG block
+          below (find them in Supabase under Settings -> API):
+            - Project URL  -> SUPABASE_URL
+            - anon public  -> SUPABASE_ANON_KEY
+          (The anon public key is safe to put in a web app.
+           Never paste the service_role key anywhere.)
+  STEP 2: save this file, then open it in your browser to test,
+          or drag it onto Vercel/Netlify to put it online.
+  ============================================================
+-->
+<script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=DM+Sans:wght@400;500;600;700&display=swap');
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0}
+body{background:#E9E6F2;font-family:'DM Sans',system-ui,sans-serif;color:#211B36}
+#root{min-height:100vh}
+input,button{font-family:inherit}
+.lg-press{transition:transform .12s ease}
+.lg-press:active{transform:scale(.97)}
+.lg-scroll::-webkit-scrollbar{width:7px;height:7px}.lg-scroll::-webkit-scrollbar-thumb{background:#CFC9E0;border-radius:7px}
+.lg-spin{width:30px;height:30px;border:3px solid #D8D3E5;border-top-color:#322A56;border-radius:50%;animation:sp 0.8s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.lg-toast{animation:pop .25s ease}
+@keyframes pop{from{transform:translate(-50%,12px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo } = React;
+const { createClient } = supabase;
+
+/* ============ CONFIG — PASTE YOUR TWO VALUES ============ */
+const SUPABASE_URL = "https://pftdeqfzoazzauegvlao.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_yBHE77QR_GHh6yE-CRAxLg_0hYCUJR8";
+/* ======================================================= */
+
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* ---------- tokens ---------- */
+const T = { bg:"#F1EFF7", surface:"#FFFFFF", ink:"#211B36", inkSoft:"#6E6884", line:"#E7E3F0",
+  anchor:"#322A56", anchorDeep:"#241E45", coral:"#EE6347", coralSoft:"#FBE7E1",
+  easy:"#3DA388", medium:"#4C7DF0", hard:"#E2913A", expert:"#DD5470" };
+const tierMeta = {
+  Easy:{c:T.easy,tint:"#E4F2EE",req:6,pts:3,label:"Warming Up"},
+  Medium:{c:T.medium,tint:"#E6EDFD",req:6,pts:4,label:"Stepping Out"},
+  Hard:{c:T.hard,tint:"#FAEFDF",req:5,pts:6,label:"Leaning In"},
+  Expert:{c:T.expert,tint:"#FBE7EC",req:4,pts:7,label:"Full Reach"},
+};
+const tiers = ["Easy","Medium","Hard","Expert"];
+const relOrder = ["Family","Friend","Stranger/Acquaintance","Workplace","Romantic"];
+const relShort = r => r==="Stranger/Acquaintance" ? "Stranger" : r;
+const fmtColor = f => !f ? T.inkSoft : f==="In person" ? T.coral : (f.includes("call") && !f.includes("message")) ? T.medium : T.easy;
+const shade = (h)=>{const n=parseInt(h.slice(1),16);let r=(n>>16)-22,g=((n>>8)&255)-22,b=(n&255)-22;r=Math.max(0,r);g=Math.max(0,g);b=Math.max(0,b);return "#"+((r<<16)|(g<<8)|b).toString(16).padStart(6,"0");};
+
+/* ---------- tiny inline icons ---------- */
+const Svg = (p)=> <svg width={p.s||18} height={p.s||18} viewBox="0 0 24 24" fill="none" stroke={p.c||"currentColor"} strokeWidth={p.w||2} strokeLinecap="round" strokeLinejoin="round" style={p.style}>{p.children}</svg>;
+const ILock=(p)=><Svg {...p}><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></Svg>;
+const ICheck=(p)=><Svg {...p}><polyline points="20 6 9 17 4 12"/></Svg>;
+const IUndo=(p)=><Svg {...p}><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></Svg>;
+const IRepeat=(p)=><Svg {...p}><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></Svg>;
+const ITrophy=(p)=><Svg {...p}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 22V9a8 8 0 0 0 8-8H6a8 8 0 0 0 8 8"/></Svg>;
+const IUser=(p)=><Svg {...p}><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></Svg>;
+const ICompass=(p)=><Svg {...p}><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></Svg>;
+const IBack=(p)=><Svg {...p}><polyline points="15 18 9 12 15 6"/></Svg>;
+const IOut=(p)=><Svg {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></Svg>;
+const IBell=(p)=><Svg {...p}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></Svg>;
+const IPlus=(p)=><Svg {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></Svg>;
+const ICopy=(p)=><Svg {...p}><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></Svg>;
+const IChevR=(p)=><Svg {...p}><polyline points="9 18 15 12 9 6"/></Svg>;
+
+/* ============ ROOT ============ */
+function App(){
+  const [session,setSession]=useState(undefined); // undefined=loading, null=logged out
+  useEffect(()=>{
+    sb.auth.getSession().then(({data})=>setSession(data.session??null));
+    const {data:sub}=sb.auth.onAuthStateChange((_e,s)=>setSession(s??null));
+    return ()=>sub.subscription.unsubscribe();
+  },[]);
+  if(!configured()) return <ConfigNotice/>;
+  if(session===undefined) return <Splash/>;
+  if(!session) return <AuthScreen/>;
+  return <SignedIn session={session}/>;
+}
+function configured(){ return !SUPABASE_URL.includes("YOUR-PROJECT") && !SUPABASE_ANON_KEY.includes("YOUR-ANON"); }
+
+function Splash(){ return <div style={{minHeight:"100vh",display:"grid",placeItems:"center"}}><div className="lg-spin"/></div>; }
+
+function ConfigNotice(){
+  return <Center>
+    <Card>
+      <Lens/>
+      <h1 style={{fontFamily:"'Fraunces',serif",fontSize:24,margin:"14px 0 8px"}}>Almost there</h1>
+      <p style={{color:T.inkSoft,fontSize:14,lineHeight:1.6}}>Open this file in a text editor and paste your Supabase <b>Project URL</b> and <b>anon public key</b> into the CONFIG block near the top, then reload. You'll find both in Supabase under Settings, then API.</p>
+    </Card>
+  </Center>;
+}
+
+/* ============ AUTH ============ */
+function AuthScreen(){
+  const [mode,setMode]=useState("login");
+  const [name,setName]=useState(""); const [email,setEmail]=useState(""); const [pw,setPw]=useState("");
+  const [busy,setBusy]=useState(false); const [err,setErr]=useState(""); const [note,setNote]=useState("");
+  const go=async()=>{
+    setErr(""); setNote(""); setBusy(true);
+    try{
+      if(mode==="signup"){
+        const {data,error}=await sb.auth.signUp({email,password:pw,options:{data:{name,role:"student"}}});
+        if(error) throw error;
+        if(!data.session) setNote("Account made. If it doesn't sign you in, email confirmation may be on in Supabase. Turn it off for the pilot, then log in.");
+      }else{
+        const {error}=await sb.auth.signInWithPassword({email,password:pw});
+        if(error) throw error;
+      }
+    }catch(e){ setErr(e.message||"Something went wrong"); }
+    setBusy(false);
+  };
+  return <Center>
+    <Card>
+      <Lens/>
+      <h1 style={{fontFamily:"'Fraunces',serif",fontSize:26,margin:"14px 0 4px"}}>Looking Glass</h1>
+      <p style={{color:T.inkSoft,fontSize:13.5,marginBottom:20}}>The social skills challenge.</p>
+      {mode==="signup" && <Field label="Your name" value={name} onChange={setName} placeholder="First and last"/>}
+      <Field label="Email" value={email} onChange={setEmail} type="email" placeholder="you@school.edu"/>
+      <Field label="Password" value={pw} onChange={setPw} type="password" placeholder="At least 6 characters"/>
+      {err && <Msg c={T.coral}>{err}</Msg>}
+      {note && <Msg c={T.inkSoft}>{note}</Msg>}
+      <button className="lg-press" onClick={go} disabled={busy}
+        style={{width:"100%",marginTop:14,padding:"14px",borderRadius:13,border:"none",cursor:"pointer",
+          background:`linear-gradient(135deg,${T.coral},${T.expert})`,color:"#fff",fontWeight:700,fontSize:15}}>
+        {busy ? "..." : mode==="signup" ? "Create account" : "Log in"}
+      </button>
+      <button onClick={()=>{setMode(mode==="login"?"signup":"login");setErr("");setNote("");}}
+        style={{width:"100%",marginTop:12,background:"none",border:"none",cursor:"pointer",color:T.anchor,fontSize:13.5,fontWeight:600}}>
+        {mode==="login" ? "New here? Create an account" : "Already have an account? Log in"}
+      </button>
+    </Card>
+  </Center>;
+}
+
+/* ============ SIGNED IN — routes by role ============ */
+function SignedIn({session}){
+  const uid=session.user.id;
+  const [profile,setProfile]=useState(undefined); // undefined=loading
+  useEffect(()=>{ sb.from("profiles").select("*").eq("id",uid).maybeSingle().then(({data})=>setProfile(data??null)); },[uid]);
+  if(profile===undefined) return <Splash/>;
+  if(profile && profile.role==="instructor") return <Instructor session={session} profile={profile}/>;
+  return <StudentMembership session={session} profile={profile}/>;
+}
+
+function StudentMembership({session,profile}){
+  const uid=session.user.id;
+  const [enr,setEnr]=useState(undefined); // undefined=loading, null=not enrolled
+  const loadMembership=async()=>{
+    const {data:e}=await sb.from("enrollments").select("*, sections(*)").eq("person_id",uid).limit(1).maybeSingle();
+    setEnr(e??null);
+  };
+  useEffect(()=>{ loadMembership(); },[uid]);
+  if(enr===undefined) return <Splash/>;
+  if(!enr) return <JoinScreen onJoined={loadMembership} name={profile?.name}/>;
+  return <Student session={session} enrollment={enr} profile={profile}/>;
+}
+
+/* ============ JOIN A SECTION ============ */
+function JoinScreen({onJoined,name}){
+  const [code,setCode]=useState(""); const [busy,setBusy]=useState(false); const [err,setErr]=useState("");
+  const join=async()=>{
+    setErr(""); setBusy(true);
+    const {error}=await sb.rpc("enroll_with_code",{code:code.trim()});
+    setBusy(false);
+    if(error) setErr(error.message||"That code didn't work"); else onJoined();
+  };
+  return <Center>
+    <Card>
+      <Lens/>
+      <h1 style={{fontFamily:"'Fraunces',serif",fontSize:23,margin:"14px 0 4px"}}>Welcome{name?`, ${name.split(" ")[0]}`:""}</h1>
+      <p style={{color:T.inkSoft,fontSize:13.5,marginBottom:18}}>Enter the join code from your instructor to get into your class. You'll get a random animal nickname that only your instructor can match to you.</p>
+      <Field label="Join code" value={code} onChange={v=>setCode(v.toUpperCase())} placeholder="e.g. FOX-4821"/>
+      {err && <Msg c={T.coral}>{err}</Msg>}
+      <button className="lg-press" onClick={join} disabled={busy||!code}
+        style={{width:"100%",marginTop:14,padding:"14px",borderRadius:13,border:"none",cursor:"pointer",
+          background:T.anchor,color:"#fff",fontWeight:700,fontSize:15,opacity:code?1:.5}}>
+        {busy?"...":"Join class"}
+      </button>
+      <button onClick={()=>sb.auth.signOut()} style={{width:"100%",marginTop:12,background:"none",border:"none",cursor:"pointer",color:T.inkSoft,fontSize:13}}>Log out</button>
+    </Card>
+  </Center>;
+}
+
+/* ============ STUDENT EXPERIENCE ============ */
+function Student({session,enrollment,profile}){
+  const enr=enrollment; const section=enr.sections;
+  const [tasks,setTasks]=useState([]);
+  const [sched,setSched]=useState({});
+  const [comps,setComps]=useState([]);     // {id, task_id}
+  const [board,setBoard]=useState([]);
+  const [notes,setNotes]=useState([]);
+  const [optIn,setOptIn]=useState(enr.opted_in);
+  const [ready,setReady]=useState(false);
+  const [view,setView]=useState("challenges");
+  const [tier,setTier]=useState("Easy");
+  const [filter,setFilter]=useState("All");
+  const [open,setOpen]=useState(null);
+  const [toast,setToast]=useState(null);
+
+  const showToast=m=>{setToast(m);setTimeout(()=>setToast(null),2600);};
+
+  const loadTasks=async()=>{ const {data}=await sb.from("tasks").select("*").eq("is_active",true).order("sort_order"); setTasks(data||[]); };
+  const loadSched=async()=>{ const {data}=await sb.from("schedule").select("*").eq("section_id",section.id);
+    const m={}; (data||[]).forEach(r=>m[r.tier]=r); setSched(m); };
+  const loadComps=async()=>{ const {data}=await sb.from("completions").select("id, task_id").eq("enrollment_id",enr.id); setComps(data||[]); };
+  const loadBoard=async()=>{ const {data}=await sb.rpc("section_leaderboard",{sec:section.id}); setBoard(data||[]); };
+  const loadNotes=async()=>{ const {data}=await sb.from("notifications").select("*").eq("enrollment_id",enr.id).is("read_at",null).order("created_at",{ascending:false}); setNotes(data||[]); };
+  const dismissNote=async(id)=>{ setNotes(n=>n.filter(x=>x.id!==id)); await sb.from("notifications").update({read_at:new Date().toISOString()}).eq("id",id); };
+
+  useEffect(()=>{ (async()=>{ await Promise.all([loadTasks(),loadSched(),loadComps(),loadBoard(),loadNotes()]); setReady(true); })(); },[]);
+
+  const countOf=id=>comps.filter(c=>c.task_id===id).length;
+  const tierTasks=t=>tasks.filter(x=>x.tier===t);
+  const isLocked=t=>{ const s=sched[t]; return !s || s.is_locked; };
+  const uniqueCore=t=>{ const ids=new Set(comps.map(c=>c.task_id)); return tierTasks(t).filter(x=>x.core_or_bonus==="Core" && ids.has(x.id)).length; };
+  const projectPoints=useMemo(()=>tiers.reduce((s,t)=>s+Math.min(uniqueCore(t),tierMeta[t].req)*tierMeta[t].pts,0),[comps,tasks]);
+  const myBoardPts=useMemo(()=>{ const r=board.find(b=>b.enrollment_id===enr.id); return r?r.points:0; },[board]);
+
+  const complete=async(task,repeat)=>{
+    const {error}=await sb.from("completions").insert({enrollment_id:enr.id,task_id:task.id});
+    if(error){ showToast("Could not save, try again"); return; }
+    await loadComps(); loadBoard();
+    showToast(repeat?`+${task.points} to the leaderboard, nice rep!`:"Logged! Now finish this entry in your Canvas logbook.");
+  };
+  const undo=async(task)=>{
+    const mine=comps.filter(c=>c.task_id===task.id);
+    if(!mine.length) return;
+    const last=mine[mine.length-1];
+    const {error}=await sb.from("completions").delete().eq("id",last.id);
+    if(error){ showToast("Could not undo, try again"); return; }
+    await loadComps(); loadBoard();
+    showToast(mine.length>1?`Removed one. You're back to ${mine.length-1}.`:"Undone. No points for this one.");
+  };
+  const toggleOptIn=async()=>{
+    const nv=!optIn; setOptIn(nv);
+    await sb.from("enrollments").update({opted_in:nv}).eq("id",enr.id);
+    loadBoard();
+  };
+
+  if(!ready) return <Splash/>;
+
+  return <div style={{maxWidth:440,margin:"0 auto",minHeight:"100vh",background:T.bg,position:"relative",paddingBottom:78}}>
+    <Header animal={enr.animal_nickname} points={projectPoints}/>
+    {notes.length>0 && <div style={{padding:"10px 14px 0"}}>
+      {notes.map(n=><div key={n.id} style={{display:"flex",alignItems:"flex-start",gap:10,background:"#EFEDF7",border:`1px solid ${T.line}`,borderRadius:13,padding:"11px 13px",marginBottom:8}}>
+        <span style={{flexShrink:0,marginTop:1}}><IBell s={16} c={T.anchor}/></span>
+        <div style={{flex:1,fontSize:13,color:T.ink,lineHeight:1.5}}>{n.message||"A note from your instructor."}</div>
+        <button onClick={()=>dismissNote(n.id)} style={{background:"none",border:"none",cursor:"pointer",color:T.inkSoft,fontSize:13,fontWeight:600,fontFamily:"inherit",flexShrink:0}}>Dismiss</button>
+      </div>)}
+    </div>}
+    {view==="challenges" && <Challenges {...{tasks,tier,setTier,filter,setFilter,sched,isLocked,tierTasks,countOf,uniqueCore,setOpen}}/>}
+    {view==="leaderboard" && <LeaderboardView board={board} optIn={optIn} toggleOptIn={toggleOptIn} myId={enr.id}/>}
+    {view==="me" && <MeView {...{projectPoints,myBoardPts,uniqueCore,optIn,name:profile?.name,animal:enr.animal_nickname,section}}/>}
+    {open && <TaskSheet task={open} count={countOf(open.id)} locked={isLocked(open.tier)} close={()=>setOpen(null)} complete={complete} undo={undo} sched={sched}/>}
+    <BottomNav view={view} setView={setView}/>
+    {toast && <div className="lg-toast" style={{position:"fixed",bottom:90,left:"50%",transform:"translateX(-50%)",background:T.anchorDeep,color:"#fff",padding:"11px 17px",borderRadius:12,fontSize:13.5,fontWeight:500,display:"flex",alignItems:"center",gap:8,zIndex:60,maxWidth:380,boxShadow:"0 14px 34px -10px rgba(40,30,80,.6)"}}><ICheck s={15} c="#fff"/> {toast}</div>}
+  </div>;
+}
+
+function Header({animal,points}){
+  return <div style={{background:`linear-gradient(135deg,${T.anchor},${T.anchorDeep})`,padding:"18px 20px 16px",color:"#fff",position:"sticky",top:0,zIndex:20}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <Lens small/>
+        <div>
+          <div style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600}}>Looking Glass</div>
+          <div style={{fontSize:11.5,color:"#B7AEDC"}}>You're {animal}</div>
+        </div>
+      </div>
+      <div style={{textAlign:"right"}}>
+        <div style={{fontSize:20,fontWeight:800,fontVariantNumeric:"tabular-nums"}}>{points}<span style={{fontSize:12,color:"#B7AEDC"}}>/100</span></div>
+        <div style={{fontSize:10,color:"#B7AEDC",letterSpacing:.4,textTransform:"uppercase"}}>Project points</div>
+      </div>
+    </div>
+  </div>;
+}
+
+function Challenges({tasks,tier,setTier,filter,setFilter,sched,isLocked,tierTasks,countOf,uniqueCore,setOpen}){
+  const m=tierMeta[tier]; const locked=isLocked(tier);
+  const list=tierTasks(tier).filter(t=>filter==="All"||t.relationship_type===filter);
+  const rels=["All",...relOrder.filter(r=>tierTasks(tier).some(t=>t.relationship_type===r))];
+  const done=Math.min(uniqueCore(tier),m.req);
+  const unlockText=t=>{ const s=sched[t]; if(s&&s.unlock_date) return "Unlocks "+new Date(s.unlock_date+"T00:00").toLocaleDateString(undefined,{month:"short",day:"numeric"}); return "Locked"; };
+  return <div style={{padding:"16px 16px 8px"}}>
+    <div className="lg-scroll" style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:6}}>
+      {tiers.map(t=>{ const tm=tierMeta[t]; const lk=isLocked(t); const a=t===tier;
+        return <button key={t} className="lg-press" onClick={()=>setTier(t)} style={{flexShrink:0,display:"flex",alignItems:"center",gap:6,padding:"9px 15px",borderRadius:12,border:"none",cursor:"pointer",fontWeight:a?700:600,fontSize:14,fontFamily:"inherit",background:a?tm.c:tm.tint,color:a?"#fff":tm.c}}>
+          {lk && <ILock s={13} c={a?"#fff":tm.c}/>} {t}
+        </button>; })}
+    </div>
+
+    {locked ? (
+      <div style={{marginTop:18,background:T.surface,borderRadius:16,padding:"28px 20px",textAlign:"center",border:`1px solid ${T.line}`}}>
+        <ILock s={26} c={m.c}/>
+        <div style={{fontFamily:"'Fraunces',serif",fontSize:19,margin:"10px 0 4px"}}>{tier} is locked</div>
+        <div style={{color:T.inkSoft,fontSize:13.5}}>{unlockText(tier)}. You can peek at the tasks below.</div>
+      </div>
+    ) : (
+      <div style={{marginTop:16,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div>
+          <div style={{fontSize:12,fontWeight:700,color:m.c,letterSpacing:.5,textTransform:"uppercase"}}>{tier} · {m.label}</div>
+          <div style={{fontFamily:"'Fraunces',serif",fontSize:22,marginTop:2}}>{done} of {m.req} tasks done</div>
+        </div>
+        <Ring value={done} max={m.req} color={m.c}/>
+      </div>
+    )}
+
+    <div className="lg-scroll" style={{display:"flex",gap:8,overflowX:"auto",margin:"14px 0 6px",paddingBottom:4}}>
+      {rels.map(r=><button key={r} onClick={()=>setFilter(r)} className="lg-press" style={{flexShrink:0,padding:"8px 14px",borderRadius:20,border:`1px solid ${filter===r?T.anchor:T.line}`,cursor:"pointer",background:filter===r?T.anchor:"#fff",color:filter===r?"#fff":T.inkSoft,fontSize:13,fontWeight:600,fontFamily:"inherit"}}>{relShort(r)}</button>)}
+    </div>
+
+    <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:6}}>
+      {list.map(t=><TaskCard key={t.id} task={t} count={countOf(t.id)} locked={locked} onClick={()=>setOpen(t)}/>)}
+    </div>
+  </div>;
+}
+
+function TaskCard({task,count,locked,onClick}){
+  const done=count>0; const m=tierMeta[task.tier];
+  return <button onClick={onClick} className="lg-press" style={{textAlign:"left",background:task.core_or_bonus==="Bonus"?"#FAF2D8":T.surface,border:`1px solid ${done?m.c:(task.core_or_bonus==="Bonus"?"#E8D9A8":T.line)}`,borderRadius:15,padding:"14px 15px",cursor:"pointer",display:"flex",gap:12,alignItems:"center",fontFamily:"inherit",opacity:locked?.65:1}}>
+    <div style={{flexShrink:0,width:42,height:42,borderRadius:11,background:done?m.c:m.tint,display:"grid",placeItems:"center",color:done?"#fff":m.c,fontWeight:800,fontSize:done?16:14}}>
+      {done?<ICheck s={20} c="#fff"/>:`+${task.points}`}
+    </div>
+    <div style={{flex:1,minWidth:0}}>
+      <div style={{fontSize:15,fontWeight:600,lineHeight:1.25}}>{task.title}</div>
+      <div style={{display:"flex",alignItems:"center",gap:7,marginTop:5,flexWrap:"wrap"}}>
+        <span style={{fontSize:11,fontWeight:600,color:T.anchor,background:"#EFEDF7",padding:"2px 8px",borderRadius:6}}>{relShort(task.relationship_type)}</span>
+        <span style={{fontSize:11,color:fmtColor(task.format),fontWeight:600}}>· {task.format}</span>
+        {count>1 && <span style={{fontSize:11,color:T.inkSoft,display:"flex",alignItems:"center",gap:3,marginLeft:"auto"}}><IRepeat s={12}/>{count}×</span>}
+      </div>
+    </div>
+  </button>;
+}
+
+const Tag=({children,c=T.anchor,bg="#EFEDF7"})=> <span style={{fontSize:11.5,fontWeight:700,color:c,background:bg,padding:"3px 9px",borderRadius:7}}>{children}</span>;
+
+function TaskSheet({task,count,locked,close,complete,undo,sched}){
+  const m=tierMeta[task.tier];
+  const Row=({label,children})=> children ? <div style={{marginTop:16}}>
+    <div style={{fontSize:11,fontWeight:700,color:m.c,letterSpacing:.5,textTransform:"uppercase",marginBottom:4}}>{label}</div>
+    <div style={{fontSize:13.5,color:T.ink,lineHeight:1.55}}>{children}</div></div> : null;
+  return <div onClick={close} style={{position:"fixed",inset:0,background:"rgba(30,22,52,.45)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center",animation:"fade .2s ease"}}>
+    <div onClick={e=>e.stopPropagation()} className="lg-scroll" style={{background:"#fff",width:"100%",maxWidth:440,maxHeight:"92vh",overflowY:"auto",borderRadius:"22px 22px 0 0",padding:"8px 0 24px"}}>
+      <div style={{display:"flex",justifyContent:"center",padding:"6px 0"}}><div style={{width:40,height:5,borderRadius:5,background:T.line}}/></div>
+      <div style={{padding:"6px 20px 0"}}>
+        <button onClick={close} style={{display:"flex",alignItems:"center",gap:4,background:"none",border:"none",cursor:"pointer",color:T.inkSoft,fontSize:13.5,fontFamily:"inherit",padding:"4px 0"}}><IBack s={16}/> Back</button>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",margin:"10px 0 6px"}}>
+          <Tag c="#fff" bg={m.c}>{task.tier} · +{task.points}</Tag>
+          <Tag>{relShort(task.relationship_type)}</Tag>
+          <Tag c={task.core_or_bonus==="Bonus"?"#9A7B1E":T.anchor} bg={task.core_or_bonus==="Bonus"?"#F6EFD9":"#EFEDF7"}>{task.core_or_bonus}</Tag>
+          <Tag c={fmtColor(task.format)} bg={T.bg}>{task.format}</Tag>
+        </div>
+        <h2 style={{fontFamily:"'Fraunces',serif",fontSize:23,lineHeight:1.2,margin:"6px 0"}}>{task.title}</h2>
+        <div style={{fontSize:15,color:T.ink,lineHeight:1.55,marginTop:6}}>{task.task_text}</div>
+        <Row label="Concept">{task.concept ? <span><b>{task.concept}.</b> {task.concept_explanation}</span> : null}</Row>
+        <Row label="Hints">{task.hints}</Row>
+        <Row label="Safety">{task.safety}</Row>
+        <Row label="A graceful exit">{task.exit}</Row>
+        <Row label="The goal, and what to expect">{task.goal}</Row>
+        <Row label="For your logbook">{task.logbook_addon}</Row>
+
+        <div style={{marginTop:24}}>
+          {locked ? (
+            <div style={{textAlign:"center",padding:14,background:m.tint,borderRadius:14,color:T.ink,fontSize:13.5,fontWeight:600}}><ILock s={16} c={m.c} style={{verticalAlign:"-3px",marginRight:6}}/>This tier isn't open yet</div>
+          ) : count===0 ? (
+            <button className="lg-press" onClick={()=>{complete(task,false);close();}} style={{width:"100%",padding:15,borderRadius:14,border:"none",cursor:"pointer",color:"#fff",background:`linear-gradient(135deg,${m.c},${shade(m.c)})`,fontSize:15,fontWeight:700,fontFamily:"inherit"}}>I've completed this task and its logbook entry</button>
+          ) : (
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"center",color:m.c,fontWeight:700,fontSize:14.5,marginBottom:12}}><ICheck s={18} c={m.c}/> Completed{count>1?` · ${count} times`:""}</div>
+              <button className="lg-press" onClick={()=>complete(task,true)} style={{width:"100%",padding:13,borderRadius:14,border:`1.5px solid ${m.c}`,cursor:"pointer",color:m.c,background:"#fff",fontSize:14,fontWeight:600,fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><IRepeat s={16} c={m.c}/> Do it again for leaderboard points</button>
+              <div style={{fontSize:11.5,color:T.inkSoft,textAlign:"center",marginTop:8,lineHeight:1.5}}>Repeats add to the leaderboard only, with a new person each time.</div>
+              <button className="lg-press" onClick={()=>undo(task)} style={{width:"100%",marginTop:12,padding:9,borderRadius:12,border:"none",cursor:"pointer",background:"transparent",color:T.inkSoft,fontSize:12.5,fontWeight:600,fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}><IUndo s={14}/> {count>1?"Undo last completion":"Tapped by accident? Undo this"}</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+function LeaderboardView({board,optIn,toggleOptIn,myId}){
+  const ranked=board.filter(b=>b.opted_in).sort((a,b)=>b.points-a.points);
+  const medal=["#E8B43C","#B9BCC8","#CD8B57"];
+  return <div style={{padding:"18px 16px"}}>
+    <h2 style={{fontFamily:"'Fraunces',serif",fontSize:22,marginBottom:4}}>Leaderboard</h2>
+    <p style={{color:T.inkSoft,fontSize:13,marginBottom:14}}>Everyone shows up as their animal. Top three earn extra credit.</p>
+    <div style={{background:T.surface,border:`1px solid ${T.line}`,borderRadius:14,padding:"12px 14px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <div><div style={{fontSize:14,fontWeight:600}}>{optIn?"You're on the board":"You're sitting it out"}</div><div style={{fontSize:12,color:T.inkSoft}}>Your points count either way.</div></div>
+      <button className="lg-press" onClick={toggleOptIn} style={{padding:"8px 14px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:"inherit",background:optIn?"#F0EEF6":T.anchor,color:optIn?T.inkSoft:"#fff"}}>{optIn?"Leave":"Join"}</button>
+    </div>
+    {ranked.length===0 ? <Empty>No one's on the board yet.</Empty> : <div style={{display:"flex",flexDirection:"column",gap:7}}>
+      {ranked.map((b,i)=><div key={b.enrollment_id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",borderRadius:12,background:b.enrollment_id===myId?T.coralSoft:T.surface,border:`1px solid ${b.enrollment_id===myId?T.coral:T.line}`}}>
+        <span style={{width:22,textAlign:"center",fontWeight:800,color:i<3?medal[i]:T.inkSoft}}>{i+1}</span>
+        <div style={{flex:1,fontSize:14.5,fontWeight:600}}>{b.animal_nickname}{b.enrollment_id===myId?" (you)":""}{i<3?<span style={{fontSize:11,color:T.inkSoft,fontWeight:500}}> · +{[10,5,3][i]} extra credit</span>:null}</div>
+        <span style={{fontWeight:800,fontVariantNumeric:"tabular-nums"}}>{b.points}</span>
+      </div>)}
+    </div>}
+  </div>;
+}
+
+function MeView({projectPoints,myBoardPts,uniqueCore,optIn,name,animal,section}){
+  return <div style={{padding:"18px 16px"}}>
+    <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:18}}>
+      <div style={{width:56,height:56,borderRadius:"50%",background:`linear-gradient(135deg,${T.coralSoft},#EDE8FA)`,display:"grid",placeItems:"center"}}><IUser s={26} c={T.anchor}/></div>
+      <div>
+        <div style={{fontFamily:"'Fraunces',serif",fontSize:21}}>{name||"You"}</div>
+        <div style={{fontSize:13,color:T.inkSoft}}>{animal} · {section?.course_code} Sec {section?.section_number}</div>
+      </div>
+    </div>
+    <div style={{display:"flex",gap:10,marginBottom:8}}>
+      <Stat label="Project points" value={`${projectPoints}/100`} c={T.coral}/>
+      <Stat label="Leaderboard points" value={myBoardPts} c={T.medium}/>
+    </div>
+    <div style={{fontSize:12.5,color:T.inkSoft,lineHeight:1.5,margin:"4px 2px 16px"}}>Project points come only from required tasks and decide your grade. Leaderboard points also include repeats and bonus tasks.</div>
+    <div style={{background:T.surface,border:`1px solid ${T.line}`,borderRadius:14,padding:"14px 16px"}}>
+      <div style={{fontSize:12,fontWeight:700,letterSpacing:.4,textTransform:"uppercase",color:T.ink,marginBottom:10}}>Progress toward your grade</div>
+      {tiers.map(t=>{const m=tierMeta[t];const n=Math.min(uniqueCore(t),m.req);return <div key={t} style={{margin:"10px 0"}}>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,marginBottom:4}}><span style={{fontWeight:600}}>{t}</span><span style={{color:T.inkSoft}}>{n}/{m.req}</span></div>
+        <div style={{height:7,borderRadius:6,background:T.line,overflow:"hidden"}}><div style={{height:"100%",width:`${n/m.req*100}%`,background:m.c,borderRadius:6}}/></div>
+      </div>;})}
+    </div>
+    <button className="lg-press" onClick={()=>sb.auth.signOut()} style={{width:"100%",marginTop:16,padding:12,borderRadius:12,border:`1px solid ${T.line}`,background:"#fff",cursor:"pointer",color:T.inkSoft,fontSize:13.5,fontWeight:600,fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><IOut s={16}/> Log out</button>
+  </div>;
+}
+
+function BottomNav({view,setView}){
+  const items=[["challenges","Challenges",ICompass],["leaderboard","Leaderboard",ITrophy],["me","Me",IUser]];
+  return <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:440,background:"#fff",borderTop:`1px solid ${T.line}`,display:"flex",zIndex:40}}>
+    {items.map(([k,label,Icon])=>{const a=view===k;return <button key={k} className="lg-press" onClick={()=>setView(k)} style={{flex:1,padding:"11px 0 13px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,color:a?T.anchor:T.inkSoft}}><Icon s={21} c={a?T.anchor:T.inkSoft}/><span style={{fontSize:11,fontWeight:a?700:500}}>{label}</span></button>;})}
+  </div>;
+}
+
+/* ---------- small shared ---------- */
+function Ring({value,max,color}){ const pct=Math.min(value/max,1); const r=24,c=2*Math.PI*r;
+  return <svg width="58" height="58" viewBox="0 0 58 58"><circle cx="29" cy="29" r={r} fill="none" stroke={T.line} strokeWidth="5"/><circle cx="29" cy="29" r={r} fill="none" stroke={color} strokeWidth="5" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c*(1-pct)} transform="rotate(-90 29 29)"/><text x="29" y="34" textAnchor="middle" fontSize="16" fontWeight="800" fill={T.ink}>{value}</text></svg>;
+}
+const Stat=({label,value,c})=> <div style={{flex:1,background:T.surface,border:`1px solid ${T.line}`,borderRadius:14,padding:"14px 16px"}}><div style={{fontSize:22,fontWeight:800,color:c,fontVariantNumeric:"tabular-nums"}}>{value}</div><div style={{fontSize:11,color:T.inkSoft,letterSpacing:.4,textTransform:"uppercase",marginTop:2}}>{label}</div></div>;
+const Empty=({children})=> <div style={{textAlign:"center",color:T.inkSoft,fontSize:13.5,padding:"24px 0"}}>{children}</div>;
+const Center=({children})=> <div style={{minHeight:"100vh",display:"grid",placeItems:"center",padding:18}}>{children}</div>;
+const Card=({children})=> <div style={{background:T.surface,borderRadius:20,padding:"28px 24px",width:"100%",maxWidth:380,boxShadow:"0 24px 60px -28px rgba(40,30,80,.4)",animation:"fade .3s ease"}}>{children}</div>;
+const Field=({label,value,onChange,type="text",placeholder})=> <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:T.inkSoft,display:"block",marginBottom:5}}>{label}</label><input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} style={{width:"100%",padding:"11px 13px",borderRadius:11,border:`1px solid ${T.line}`,fontSize:15,outline:"none",background:T.bg}}/></div>;
+const Msg=({children,c})=> <div style={{fontSize:12.5,color:c,marginTop:8,lineHeight:1.5}}>{children}</div>;
+function Lens({small}){ const s=small?30:46; return <svg width={s} height={s} viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="17" stroke={small?"#fff":T.anchor} strokeOpacity="0.5" strokeWidth="2"/><circle cx="20" cy="20" r="11" fill="url(#g)"/><path d="M14 16a8 8 0 0 1 6-4" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" opacity="0.9"/><defs><radialGradient id="g" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stopColor="#fff" stopOpacity="0.95"/><stop offset="0.5" stopColor={T.coral}/><stop offset="1" stopColor={T.expert}/></radialGradient></defs></svg>; }
+
+/* ============ INSTRUCTOR EXPERIENCE ============ */
+const btnPrimary={display:"inline-flex",alignItems:"center",gap:7,padding:"10px 15px",borderRadius:12,border:"none",cursor:"pointer",background:`linear-gradient(135deg,${T.coral},${T.expert})`,color:"#fff",fontWeight:700,fontSize:14,fontFamily:"inherit"};
+const secCardStyle={display:"flex",alignItems:"center",gap:12,width:"100%",background:T.surface,border:`1px solid ${T.line}`,borderRadius:15,padding:"14px 16px",cursor:"pointer",fontFamily:"inherit"};
+const rosterRow={display:"flex",alignItems:"center",gap:12,background:T.surface,border:`1px solid ${T.line}`,borderRadius:14,padding:"12px 14px"};
+const miniBtn={display:"flex",alignItems:"center",gap:5,padding:"8px 12px",borderRadius:10,border:`1px solid ${T.line}`,background:"#fff",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:"inherit",color:T.ink};
+const backBtn={display:"flex",alignItems:"center",gap:5,background:"none",border:"none",cursor:"pointer",color:T.inkSoft,fontSize:13.5,fontFamily:"inherit",padding:"2px 0",marginBottom:6};
+const tabBtn=(a)=>({padding:"9px 15px",borderRadius:11,border:"none",cursor:"pointer",fontWeight:a?700:600,fontSize:14,fontFamily:"inherit",background:a?T.anchor:"#EFEDF7",color:a?"#fff":T.anchor});
+const sortChip=(a)=>({padding:"6px 12px",borderRadius:20,border:`1px solid ${a?T.anchor:T.line}`,cursor:"pointer",background:a?T.anchor:"#fff",color:a?"#fff":T.inkSoft,fontSize:12.5,fontWeight:600,fontFamily:"inherit"});
+
+function Toast({children}){
+  return <div className="lg-toast" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:T.anchorDeep,color:"#fff",padding:"11px 17px",borderRadius:12,fontSize:13.5,fontWeight:500,display:"flex",alignItems:"center",gap:8,zIndex:60,maxWidth:420,boxShadow:"0 14px 34px -10px rgba(40,30,80,.6)"}}><ICheck s={15} c="#fff"/> {children}</div>;
+}
+function Modal({title,children,onClose}){
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(30,22,52,.45)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center",padding:18,animation:"fade .2s ease"}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#fff",width:"100%",maxWidth:420,borderRadius:18,padding:"22px 22px 24px",boxShadow:"0 24px 60px -28px rgba(40,30,80,.5)"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:10}}>
+        <h2 style={{fontFamily:"'Fraunces',serif",fontSize:20,lineHeight:1.2}}>{title}</h2>
+        <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:T.inkSoft,fontSize:22,fontFamily:"inherit",lineHeight:1}}>×</button>
+      </div>
+      {children}
+    </div>
+  </div>;
+}
+function JoinCodeChip({code,onCopied}){
+  const copy=()=>{ try{ navigator.clipboard.writeText(code); }catch(e){} onCopied&&onCopied(); };
+  return <button className="lg-press" onClick={copy} style={{display:"flex",alignItems:"center",gap:10,background:"#EFEDF7",border:`1px solid ${T.line}`,borderRadius:12,padding:"9px 13px",cursor:"pointer",fontFamily:"inherit"}}>
+    <div style={{textAlign:"left"}}><div style={{fontSize:10,color:T.inkSoft,letterSpacing:.4,textTransform:"uppercase"}}>Join code</div><div style={{fontSize:16,fontWeight:800,color:T.anchor,letterSpacing:.5}}>{code}</div></div>
+    <ICopy s={16} c={T.anchor}/>
+  </button>;
+}
+
+function InstructorShell({profile,children,toast}){
+  return <div style={{maxWidth:900,margin:"0 auto",minHeight:"100vh",background:T.bg}}>
+    <div style={{background:`linear-gradient(135deg,${T.anchor},${T.anchorDeep})`,padding:"15px 20px",color:"#fff",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:20}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}><Lens small/><div style={{fontFamily:"'Fraunces',serif",fontSize:17,fontWeight:600}}>Looking Glass</div></div>
+      <div style={{display:"flex",alignItems:"center",gap:12}}>
+        {profile?.name && <div style={{fontSize:13,color:"#B7AEDC"}}>{profile.name}</div>}
+        <button className="lg-press" onClick={()=>sb.auth.signOut()} style={{background:"rgba(255,255,255,.12)",border:"none",borderRadius:9,padding:"7px 11px",color:"#fff",cursor:"pointer",fontSize:12.5,fontWeight:600,fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}><IOut s={14} c="#fff"/> Log out</button>
+      </div>
+    </div>
+    <div style={{padding:"20px 18px 60px"}}>{children}</div>
+    {toast && <Toast>{toast}</Toast>}
+  </div>;
+}
+
+function Instructor({session,profile}){
+  const uid=session.user.id;
+  const [sections,setSections]=useState(undefined);
+  const [counts,setCounts]=useState({});
+  const [openSec,setOpenSec]=useState(null);
+  const [creating,setCreating]=useState(false);
+  const [toast,setToast]=useState(null);
+  const showToast=m=>{setToast(m);setTimeout(()=>setToast(null),2800);};
+
+  const load=async()=>{
+    const {data:secs}=await sb.from("sections").select("*").eq("instructor_id",uid).order("created_at");
+    const list=secs||[];
+    const ids=new Set(list.map(s=>s.id));
+    const {data:enrs}=await sb.from("enrollments").select("id, section_id");
+    const c={}; (enrs||[]).forEach(e=>{ if(ids.has(e.section_id)) c[e.section_id]=(c[e.section_id]||0)+1; });
+    setCounts(c); setSections(list);
+  };
+  useEffect(()=>{ load(); },[uid]);
+
+  if(sections===undefined) return <InstructorShell profile={profile}><Splash/></InstructorShell>;
+
+  return <InstructorShell profile={profile} toast={toast}>
+    {openSec
+      ? <SectionDetail section={openSec} count={counts[openSec.id]||0}
+          onBack={()=>{ setOpenSec(null); load(); }} showToast={showToast}/>
+      : <div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18,gap:12,flexWrap:"wrap"}}>
+            <div>
+              <div style={{fontSize:12,fontWeight:700,color:T.coral,letterSpacing:.5,textTransform:"uppercase"}}>Instructor</div>
+              <h1 style={{fontFamily:"'Fraunces',serif",fontSize:26}}>Your sections</h1>
+            </div>
+            <button className="lg-press" onClick={()=>setCreating(true)} style={btnPrimary}><IPlus s={16} c="#fff"/> New section</button>
+          </div>
+          {sections.length===0 ? <Empty>No sections yet. Create your first one to get a join code for your students.</Empty> :
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {sections.map(s=><button key={s.id} className="lg-press" onClick={()=>setOpenSec(s)} style={secCardStyle}>
+                <div style={{flex:1,minWidth:0,textAlign:"left"}}>
+                  <div style={{fontSize:16,fontWeight:700}}>{s.course_code} · Sec {s.section_number}</div>
+                  <div style={{fontSize:13,color:T.inkSoft,marginTop:2}}>{s.meeting||"No meeting time set"}</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:15,fontWeight:800}}>{counts[s.id]||0}</div>
+                  <div style={{fontSize:11,color:T.inkSoft}}>students</div>
+                </div>
+                <Tag c={T.anchor} bg="#EFEDF7">{s.join_code}</Tag>
+                <IChevR s={18} c={T.inkSoft}/>
+              </button>)}
+            </div>}
+        </div>}
+    {creating && <CreateSection onClose={()=>setCreating(false)} onCreated={(code)=>{ setCreating(false); load(); showToast("Section created. Join code: "+code); }}/>}
+  </InstructorShell>;
+}
+
+function CreateSection({onClose,onCreated}){
+  const [course,setCourse]=useState("COM 100");
+  const [secNum,setSecNum]=useState("");
+  const [meeting,setMeeting]=useState("");
+  const [busy,setBusy]=useState(false); const [err,setErr]=useState("");
+  const go=async()=>{
+    setErr(""); setBusy(true);
+    const {data,error}=await sb.rpc("create_section",{p_course:course.trim(),p_section:secNum.trim(),p_meeting:meeting.trim()});
+    setBusy(false);
+    if(error){ setErr(error.message); return; }
+    const row=Array.isArray(data)?data[0]:data;
+    onCreated(row?.join_code||"");
+  };
+  return <Modal onClose={onClose} title="Create a section">
+    <Field label="Course code" value={course} onChange={setCourse} placeholder="COM 100"/>
+    <Field label="Section number" value={secNum} onChange={setSecNum} placeholder="1001"/>
+    <Field label="Meeting time (optional)" value={meeting} onChange={setMeeting} placeholder="MW 9:00 AM"/>
+    {err && <Msg c={T.coral}>{err}</Msg>}
+    <button className="lg-press" onClick={go} disabled={busy||!secNum} style={{...btnPrimary,width:"100%",marginTop:14,justifyContent:"center",opacity:secNum?1:.5}}>{busy?"...":"Create section"}</button>
+  </Modal>;
+}
+
+function SectionDetail({section,count,onBack,showToast}){
+  const [tab,setTab]=useState("roster");
+  const [roster,setRoster]=useState([]);
+  const [sched,setSched]=useState([]);
+  const [tasks,setTasks]=useState([]);
+  const [sec,setSec]=useState(section);
+  const [busy,setBusy]=useState(true);
+  const load=async()=>{
+    const order={Easy:0,Medium:1,Hard:2,Expert:3};
+    const [{data:r},{data:s},{data:sc},{data:tk}]=await Promise.all([
+      sb.rpc("section_roster",{sec:section.id}),
+      sb.from("schedule").select("*").eq("section_id",section.id),
+      sb.from("sections").select("*").eq("id",section.id).maybeSingle(),
+      sb.from("tasks").select("id, code, title, tier, core_or_bonus, points, sort_order").eq("is_active",true).order("sort_order")
+    ]);
+    setRoster(r||[]);
+    setSched((s||[]).sort((a,b)=>order[a.tier]-order[b.tier]));
+    setTasks(tk||[]);
+    if(sc) setSec(sc);
+    setBusy(false);
+  };
+  useEffect(()=>{ load(); },[section.id]);
+
+  return <div>
+    <button onClick={onBack} style={backBtn}><IBack s={16}/> All sections</button>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",margin:"6px 0 16px",flexWrap:"wrap",gap:12}}>
+      <div>
+        <h1 style={{fontFamily:"'Fraunces',serif",fontSize:24}}>{sec.course_code} · Sec {sec.section_number}</h1>
+        <div style={{fontSize:13,color:T.inkSoft,marginTop:3}}>{sec.meeting||"No meeting time"} · {count} students</div>
+      </div>
+      <JoinCodeChip code={sec.join_code} onCopied={()=>showToast("Join code copied")}/>
+    </div>
+    <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
+      {[["roster","Roster"],["schedule","Schedule"],["settings","Settings"]].map(([k,l])=>
+        <button key={k} className="lg-press" onClick={()=>setTab(k)} style={tabBtn(tab===k)}>{l}</button>)}
+    </div>
+    {busy ? <Splash/>
+      : tab==="roster"   ? <Roster roster={roster} tasks={tasks} reload={load} showToast={showToast}/>
+      : tab==="schedule" ? <Schedule sched={sched} reload={load} showToast={showToast}/>
+      :                    <Settings sec={sec} reload={load} showToast={showToast}/>}
+  </div>;
+}
+
+function Roster({roster,tasks,reload,showToast}){
+  const [sortKey,setSortKey]=useState("project_points");
+  const [adjFor,setAdjFor]=useState(null);
+  const [detailFor,setDetailFor]=useState(null);
+  const sorted=[...roster].sort((a,b)=>{
+    if(sortKey==="name") return (a.name||"").localeCompare(b.name||"");
+    return ((b[sortKey]||0)-(a[sortKey]||0)) || (a.name||"").localeCompare(b.name||"");
+  });
+  const nudge=async(r)=>{
+    const {error}=await sb.from("notifications").insert({enrollment_id:r.enrollment_id,type:"nudge",message:"Checking in. New challenges are open. Jump back in when you can."});
+    showToast(error?("Could not send: "+error.message):("Nudge sent to "+r.animal_nickname));
+  };
+  if(roster.length===0) return <Empty>No students have joined yet. Share the join code above to get them in.</Empty>;
+  return <div>
+    <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap",alignItems:"center"}}>
+      <span style={{fontSize:12.5,color:T.inkSoft}}>Sort by</span>
+      {[["project_points","Project points"],["leaderboard_points","Leaderboard"],["name","Name"],["total_reps","Repeats"]].map(([k,l])=>
+        <button key={k} onClick={()=>setSortKey(k)} className="lg-press" style={sortChip(sortKey===k)}>{l}</button>)}
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      {sorted.map(r=><div key={r.enrollment_id} style={rosterRow}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:15,fontWeight:700,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <button className="lg-press" onClick={()=>setDetailFor(r)} style={{display:"inline-flex",alignItems:"center",gap:4,background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:"inherit",fontSize:15,fontWeight:700,color:T.anchor}}>{r.name}<IChevR s={14} c={T.inkSoft}/></button>
+            <span style={{fontSize:11.5,fontWeight:600,color:T.anchor,background:"#EFEDF7",padding:"2px 8px",borderRadius:6}}>{r.animal_nickname}</span>
+            {r.flagged && <span style={{fontSize:11,fontWeight:700,color:"#B23B2E",background:"#FBE3DF",padding:"2px 8px",borderRadius:6}}>Grinding · {r.max_task_reps}× one task</span>}
+            {!r.opted_in && <span style={{fontSize:11,color:T.inkSoft}}>off the board</span>}
+          </div>
+          <div style={{fontSize:12.5,color:T.inkSoft,marginTop:5,display:"flex",gap:14,flexWrap:"wrap"}}>
+            <span><b style={{color:T.coral}}>{r.project_points}</b>/100 project</span>
+            <span><b style={{color:T.medium}}>{r.leaderboard_points}</b> leaderboard</span>
+            <span>{r.total_reps} repeats</span>
+            {r.points_adjustment!==0 && <span>adj {r.points_adjustment>0?"+":""}{r.points_adjustment}</span>}
+          </div>
+        </div>
+        <div style={{display:"flex",gap:7,flexShrink:0}}>
+          <button className="lg-press" onClick={()=>setAdjFor(r)} style={miniBtn}>Adjust</button>
+          <button className="lg-press" onClick={()=>nudge(r)} style={{...miniBtn,background:T.anchor,color:"#fff",border:"none"}}><IBell s={14} c="#fff"/> Nudge</button>
+        </div>
+      </div>)}
+    </div>
+    {adjFor && <AdjustPoints row={adjFor} onClose={()=>setAdjFor(null)} onSaved={()=>{setAdjFor(null);reload();}} showToast={showToast}/>}
+    {detailFor && <StudentDetail row={detailFor} tasks={tasks} onClose={()=>setDetailFor(null)}/>}
+  </div>;
+}
+
+function StudentDetail({row,tasks,onClose}){
+  const [comps,setComps]=useState(null);
+  useEffect(()=>{ (async()=>{
+    const {data}=await sb.from("completions").select("task_id, completed_at").eq("enrollment_id",row.enrollment_id).order("completed_at");
+    setComps(data||[]);
+  })(); },[row.enrollment_id]);
+  const byId=useMemo(()=>Object.fromEntries((tasks||[]).map(t=>[t.id,t])),[tasks]);
+  const byTask={}; (comps||[]).forEach(c=>{ const e=byTask[c.task_id]||(byTask[c.task_id]={count:0,last:null}); e.count++; e.last=c.completed_at; });
+  const byTier={Easy:[],Medium:[],Hard:[],Expert:[]};
+  Object.entries(byTask).forEach(([tid,info])=>{ const t=byId[tid]; if(t&&byTier[t.tier]) byTier[t.tier].push({t,info}); });
+  const totalDistinct=Object.keys(byTask).length;
+  const totalCompletions=(comps||[]).length;
+  return <Modal onClose={onClose} title={"What "+row.name+" has logged"}>
+    {comps===null ? <div style={{display:"grid",placeItems:"center",padding:24}}><div className="lg-spin"/></div> : <div>
+      <div style={{fontSize:12.5,color:T.inkSoft,marginBottom:14,lineHeight:1.5}}>{row.animal_nickname} · {totalDistinct} {totalDistinct===1?"task":"tasks"} logged · {totalCompletions} total {totalCompletions===1?"completion":"completions"} · {row.project_points}/100 project</div>
+      <div className="lg-scroll" style={{maxHeight:"58vh",overflowY:"auto"}}>
+        {tiers.map(tier=>{
+          const items=(byTier[tier]||[]).slice().sort((a,b)=>(a.t.sort_order||0)-(b.t.sort_order||0));
+          const m=tierMeta[tier];
+          const coreDone=items.filter(x=>x.t.core_or_bonus==="Core").length;
+          return <div key={tier} style={{marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+              <span style={{fontSize:12,fontWeight:700,color:m.c,letterSpacing:.4,textTransform:"uppercase"}}>{tier}</span>
+              <span style={{fontSize:11.5,color:T.inkSoft}}>{Math.min(coreDone,m.req)}/{m.req} core done</span>
+            </div>
+            {items.length===0 ? <div style={{fontSize:12.5,color:T.inkSoft,padding:"1px 0 3px"}}>Nothing logged yet</div> :
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {items.map(({t,info})=><div key={t.id} style={{display:"flex",alignItems:"center",gap:8,background:t.core_or_bonus==="Bonus"?"#FAF2D8":T.surface,border:`1px solid ${T.line}`,borderRadius:10,padding:"8px 11px"}}>
+                  <div style={{flex:1,minWidth:0,fontSize:13.5,fontWeight:600,lineHeight:1.3}}>{t.title}</div>
+                  <Tag c={t.core_or_bonus==="Bonus"?"#9A7B1E":T.anchor} bg={t.core_or_bonus==="Bonus"?"#F6EFD9":"#EFEDF7"}>{t.core_or_bonus}</Tag>
+                  {info.count>1 && <span style={{fontSize:11.5,color:T.inkSoft,display:"flex",alignItems:"center",gap:3,flexShrink:0}}><IRepeat s={12}/>{info.count}×</span>}
+                </div>)}
+              </div>}
+          </div>;
+        })}
+      </div>
+    </div>}
+  </Modal>;
+}
+
+function AdjustPoints({row,onClose,onSaved,showToast}){
+  const [val,setVal]=useState(String(row.points_adjustment||0));
+  const [busy,setBusy]=useState(false);
+  const save=async()=>{
+    setBusy(true);
+    const n=parseInt(val,10);
+    const {error}=await sb.from("enrollments").update({points_adjustment:isNaN(n)?0:n}).eq("id",row.enrollment_id);
+    setBusy(false);
+    if(error){ showToast("Could not save: "+error.message); return; }
+    showToast("Points adjusted for "+row.animal_nickname); onSaved();
+  };
+  return <Modal onClose={onClose} title={"Adjust points · "+row.name}>
+    <p style={{fontSize:13,color:T.inkSoft,marginBottom:12,lineHeight:1.5}}>This adds or subtracts leaderboard points for this student, for extra credit or a correction. Use a negative number to subtract. It does not change project (grade) points.</p>
+    <Field label="Points adjustment" value={val} onChange={setVal} type="number" placeholder="0"/>
+    <button className="lg-press" onClick={save} disabled={busy} style={{...btnPrimary,width:"100%",marginTop:12,justifyContent:"center"}}>{busy?"...":"Save"}</button>
+  </Modal>;
+}
+
+function Schedule({sched,reload,showToast}){
+  const [rows,setRows]=useState(sched.map(s=>({...s})));
+  const [busy,setBusy]=useState(false);
+  useEffect(()=>{ setRows(sched.map(s=>({...s}))); },[sched]);
+  const setRow=(i,patch)=>setRows(rs=>rs.map((r,j)=>j===i?{...r,...patch}:r));
+  const save=async()=>{
+    setBusy(true);
+    for(const r of rows){
+      await sb.from("schedule").update({unlock_date:r.unlock_date||null,is_locked:r.is_locked}).eq("id",r.id);
+    }
+    setBusy(false); showToast("Schedule saved"); reload();
+  };
+  return <div>
+    <p style={{fontSize:13,color:T.inkSoft,marginBottom:14,lineHeight:1.5,maxWidth:560}}>Set when each tier opens. Open tiers are available now; locked tiers let students peek at the tasks but not complete them. The date shows students when it unlocks.</p>
+    <div style={{display:"flex",flexDirection:"column",gap:10,maxWidth:560}}>
+      {rows.map((r,i)=>{const m=tierMeta[r.tier];return <div key={r.id} style={{display:"flex",alignItems:"center",gap:12,background:T.surface,border:`1px solid ${T.line}`,borderRadius:14,padding:"12px 14px",flexWrap:"wrap"}}>
+        <span style={{fontWeight:700,color:m.c,minWidth:64}}>{r.tier}</span>
+        <input type="date" value={r.unlock_date||""} onChange={e=>setRow(i,{unlock_date:e.target.value})} style={{padding:"8px 10px",borderRadius:10,border:`1px solid ${T.line}`,fontSize:14,fontFamily:"inherit",background:T.bg}}/>
+        <button className="lg-press" onClick={()=>setRow(i,{is_locked:!r.is_locked})} style={{marginLeft:"auto",padding:"8px 14px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:"inherit",background:r.is_locked?"#F0EEF6":m.c,color:r.is_locked?T.inkSoft:"#fff",minWidth:78}}>{r.is_locked?"Locked":"Open"}</button>
+      </div>;})}
+    </div>
+    <button className="lg-press" onClick={save} disabled={busy} style={{...btnPrimary,marginTop:16,justifyContent:"center"}}>{busy?"...":"Save schedule"}</button>
+  </div>;
+}
+
+function Settings({sec,reload,showToast}){
+  const [thr,setThr]=useState(String(sec.repeat_flag_threshold));
+  const [days,setDays]=useState(String(sec.nudge_after_days));
+  const [lbEnabled,setLbEnabled]=useState(sec.leaderboard_enabled);
+  const [busy,setBusy]=useState(false);
+  const save=async()=>{
+    setBusy(true);
+    const {error}=await sb.from("sections").update({
+      repeat_flag_threshold:parseInt(thr,10)||4,
+      nudge_after_days:parseInt(days,10)||4,
+      leaderboard_enabled:lbEnabled
+    }).eq("id",sec.id);
+    setBusy(false);
+    if(error){ showToast("Could not save: "+error.message); return; }
+    showToast("Settings saved"); reload();
+  };
+  return <div style={{maxWidth:480}}>
+    <Field label="Flag a student after they repeat one task more than this many times" value={thr} onChange={setThr} type="number"/>
+    <Field label="Suggest a nudge after a tier has been open this many days" value={days} onChange={setDays} type="number"/>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:T.surface,border:`1px solid ${T.line}`,borderRadius:12,padding:"12px 14px",margin:"4px 0 16px"}}>
+      <div style={{fontSize:14,fontWeight:600}}>Leaderboard on for this section</div>
+      <button className="lg-press" onClick={()=>setLbEnabled(v=>!v)} style={{padding:"7px 14px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:"inherit",background:lbEnabled?T.easy:"#F0EEF6",color:lbEnabled?"#fff":T.inkSoft,minWidth:60}}>{lbEnabled?"On":"Off"}</button>
+    </div>
+    <button className="lg-press" onClick={save} disabled={busy} style={{...btnPrimary,justifyContent:"center"}}>{busy?"...":"Save settings"}</button>
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
