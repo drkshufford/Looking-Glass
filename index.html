@@ -85,6 +85,7 @@ const IPlus=(p)=><Svg {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" 
 const ICopy=(p)=><Svg {...p}><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></Svg>;
 const IChevR=(p)=><Svg {...p}><polyline points="9 18 15 12 9 6"/></Svg>;
 const IBookmark=({s=18,c="currentColor",fill="none"})=> <svg width={s} height={s} viewBox="0 0 24 24" fill={fill} stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>;
+const IChat=(p)=><Svg {...p}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></Svg>;
 
 /* ============ ROOT ============ */
 function App(){
@@ -291,6 +292,7 @@ function Student({session,enrollment,profile}){
     </div>}
     {view==="challenges" && <Challenges {...{tasks,tier,setTier,filter,setFilter,sched,isLocked,tierTasks,countOf,uniqueCore,setOpen,savedIds,toggleSaved}}/>}
     {view==="list" && <MyListView {...{tasks,savedIds,countOf,isLocked,setOpen,toggleSaved}}/>}
+    {view==="toolkit" && <Toolkit/>}
     {view==="leaderboard" && <LeaderboardView board={board} optIn={optIn} toggleOptIn={toggleOptIn} myId={enr.id}/>}
     {view==="me" && <MeView {...{projectPoints,myBoardPts,uniqueCore,optIn,name:profile?.name,animal:enr.animal_nickname,section}}/>}
     {open && <TaskSheet task={open} count={countOf(open.id)} locked={isLocked(open.tier)} close={()=>setOpen(null)} complete={complete} undo={undo} sched={sched} saved={savedIds.has(open.id)} onToggleSave={toggleSaved}/>}
@@ -489,10 +491,98 @@ function MyListView({tasks,savedIds,countOf,isLocked,setOpen,toggleSaved}){
   </div>;
 }
 
+const PHRASES=[
+  {cat:"Openers", intro:"The best openers are low-stakes and situational. You don't need to be clever, you just need a reason to speak. Comment on what's around you, or ask an easy question.", groups:[
+    {label:"Situational (with a stranger)", lines:[
+      "This line is moving slower than I expected. Have you been here before?",
+      "I can never decide what to order here. Got a favorite?",
+      "That looks good, what did you get?",
+      "Is it always this busy on a weekday?",
+      "Do you know if this seat's taken?",
+      "I'm new around here, do you know a good coffee spot nearby?"]},
+    {label:"Shared context (class, event, gym, work)", lines:[
+      "How are you finding this class so far?",
+      "Did you catch what she said about the assignment? I want to make sure I got it right.",
+      "Are you here for the event too? How do you know everyone?",
+      "Mind if I join you? Everywhere else is packed.",
+      "You look like you know the machines here, mind showing me how this one works?"]},
+    {label:"Re-opener (someone you sort of know)", lines:[
+      "Hey, good to see you again. How've you been?",
+      "I keep seeing you in here. I'm ___, I don't think we've officially met.",
+      "You're the one who mentioned that show last time, right? I actually started it."]},
+  ]},
+  {cat:"Questions", intro:"Open questions keep a conversation alive. Ask about experiences and choices rather than yes/no facts, then follow the thread they give you.", groups:[
+    {label:"Getting to know someone", lines:[
+      "What got you into ___?",
+      "Are you from around here, or did you come for school?",
+      "What do you like to do when you're not in class?",
+      "What's been the best part of your week so far?"]},
+    {label:"Following up (keep it going)", lines:[
+      "Oh interesting, what's that like?",
+      "How did you end up doing that?",
+      "What do you enjoy most about it?",
+      "Wait, tell me more about that."]},
+    {label:"Lighter ones", lines:[
+      "Okay, important question: coffee or tea?",
+      "What's something you're weirdly good at?",
+      "What's the last thing that made you laugh?"]},
+  ]},
+  {cat:"Compliments", intro:"Specific beats generic, and complimenting a choice or an effort lands better than complimenting looks. Keep it short, mean it, and then move on so it doesn't get heavy.", groups:[
+    {label:"On effort or skill", lines:[
+      "You clearly put a lot of work into that, it showed.",
+      "That was a really good point you made earlier.",
+      "How do you stay so consistent with this? I'm impressed."]},
+    {label:"On a choice or taste", lines:[
+      "I love your jacket, where'd you find it?",
+      "Good pick, that's my favorite too."]},
+    {label:"On the person", lines:[
+      "You have a way of making people feel comfortable.",
+      "Talking to you is easy, I appreciate that."]},
+  ]},
+  {cat:"Exits", intro:"A good exit is warm and honest, and it leaves the door open. You don't owe anyone a long excuse. A clean, friendly close is a skill on its own.", groups:[
+    {label:"Simple and clean", lines:[
+      "I should let you get back to it, but this was great.",
+      "I've got to run to class, but I'm glad we talked.",
+      "I don't want to keep you. Take care."]},
+    {label:"Leave the door open", lines:[
+      "Let's pick this up sometime. Are you around here often?",
+      "I'd love to keep talking, mind if I get your number or social media?",
+      "We should study together sometime."]},
+    {label:"Stepping away from a group", lines:[
+      "I'm going to go say hi to a few people, but it was nice meeting you.",
+      "I'm going to grab a refill, catch you in a bit."]},
+  ]},
+];
+
+function Toolkit(){
+  const [open,setOpen]=useState("Openers");
+  return <div style={{padding:"18px 16px"}}>
+    <h2 style={{fontFamily:"'Fraunces',serif",fontSize:22,marginBottom:4}}>Toolkit</h2>
+    <p style={{color:T.inkSoft,fontSize:13,marginBottom:16,lineHeight:1.5}}>Words for the moment. Tap a category for openers, questions, compliments, and graceful exits you can borrow when you're not sure what to say.</p>
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {PHRASES.map(c=>{const isOpen=open===c.cat;return <div key={c.cat} style={{background:T.surface,border:`1px solid ${T.line}`,borderRadius:14,overflow:"hidden"}}>
+        <button className="lg-press" onClick={()=>setOpen(isOpen?null:c.cat)} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+          <span style={{fontSize:16,fontWeight:700,color:T.ink}}>{c.cat}</span>
+          <span style={{display:"inline-flex",transform:isOpen?"rotate(90deg)":"none",transition:"transform .2s"}}><IChevR s={18} c={T.inkSoft}/></span>
+        </button>
+        {isOpen && <div style={{padding:"0 16px 16px"}}>
+          <p style={{fontSize:12.5,color:T.inkSoft,lineHeight:1.55,margin:"0 0 12px"}}>{c.intro}</p>
+          {c.groups.map(g=><div key={g.label} style={{marginBottom:12}}>
+            <div style={{fontSize:11,fontWeight:700,color:T.anchor,letterSpacing:.3,textTransform:"uppercase",marginBottom:6}}>{g.label}</div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {g.lines.map((ln,i)=><div key={i} style={{fontSize:13.5,color:T.ink,lineHeight:1.5,background:T.bg,border:`1px solid ${T.line}`,borderRadius:10,padding:"9px 12px"}}>{ln}</div>)}
+            </div>
+          </div>)}
+        </div>}
+      </div>;})}
+    </div>
+  </div>;
+}
+
 function BottomNav({view,setView}){
-  const items=[["challenges","Challenges",ICompass],["list","My List",IBookmark],["leaderboard","Board",ITrophy],["me","Me",IUser]];
+  const items=[["challenges","Challenges",ICompass],["list","My List",IBookmark],["toolkit","Toolkit",IChat],["leaderboard","Board",ITrophy],["me","Me",IUser]];
   return <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:440,background:"#fff",borderTop:`1px solid ${T.line}`,display:"flex",zIndex:40}}>
-    {items.map(([k,label,Icon])=>{const a=view===k;return <button key={k} className="lg-press" onClick={()=>setView(k)} style={{flex:1,padding:"11px 0 13px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,color:a?T.anchor:T.inkSoft}}><Icon s={21} c={a?T.anchor:T.inkSoft}/><span style={{fontSize:11,fontWeight:a?700:500,whiteSpace:"nowrap"}}>{label}</span></button>;})}
+    {items.map(([k,label,Icon])=>{const a=view===k;return <button key={k} className="lg-press" onClick={()=>setView(k)} style={{flex:1,padding:"10px 0 12px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,color:a?T.anchor:T.inkSoft}}><Icon s={20} c={a?T.anchor:T.inkSoft}/><span style={{fontSize:10.5,fontWeight:a?700:500,whiteSpace:"nowrap"}}>{label}</span></button>;})}
   </div>;
 }
 
