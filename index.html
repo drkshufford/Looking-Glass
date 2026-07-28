@@ -84,6 +84,7 @@ const IBell=(p)=><Svg {...p}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3
 const IPlus=(p)=><Svg {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></Svg>;
 const ICopy=(p)=><Svg {...p}><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></Svg>;
 const IChevR=(p)=><Svg {...p}><polyline points="9 18 15 12 9 6"/></Svg>;
+const IBookmark=({s=18,c="currentColor",fill="none"})=> <svg width={s} height={s} viewBox="0 0 24 24" fill={fill} stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>;
 
 /* ============ ROOT ============ */
 function App(){
@@ -211,6 +212,7 @@ function Student({session,enrollment,profile}){
   const [comps,setComps]=useState([]);     // {id, task_id}
   const [board,setBoard]=useState([]);
   const [notes,setNotes]=useState([]);
+  const [savedIds,setSavedIds]=useState(new Set());
   const [optIn,setOptIn]=useState(enr.opted_in);
   const [ready,setReady]=useState(false);
   const [view,setView]=useState("challenges");
@@ -227,9 +229,17 @@ function Student({session,enrollment,profile}){
   const loadComps=async()=>{ const {data}=await sb.from("completions").select("id, task_id").eq("enrollment_id",enr.id); setComps(data||[]); };
   const loadBoard=async()=>{ const {data}=await sb.rpc("section_leaderboard",{sec:section.id}); setBoard(data||[]); };
   const loadNotes=async()=>{ const {data}=await sb.from("notifications").select("*").eq("enrollment_id",enr.id).is("read_at",null).order("created_at",{ascending:false}); setNotes(data||[]); };
+  const loadSaved=async()=>{ const {data}=await sb.from("saved_tasks").select("task_id").eq("enrollment_id",enr.id); setSavedIds(new Set((data||[]).map(r=>r.task_id))); };
   const dismissNote=async(id)=>{ setNotes(n=>n.filter(x=>x.id!==id)); await sb.from("notifications").update({read_at:new Date().toISOString()}).eq("id",id); };
 
-  useEffect(()=>{ (async()=>{ await Promise.all([loadTasks(),loadSched(),loadComps(),loadBoard(),loadNotes()]); setReady(true); })(); },[]);
+  useEffect(()=>{ (async()=>{ await Promise.all([loadTasks(),loadSched(),loadComps(),loadBoard(),loadNotes(),loadSaved()]); setReady(true); })(); },[]);
+  useEffect(()=>{
+    const iv=setInterval(loadNotes,25000);
+    const refetch=()=>{ if(!document.hidden) loadNotes(); };
+    window.addEventListener("focus",refetch);
+    document.addEventListener("visibilitychange",refetch);
+    return ()=>{ clearInterval(iv); window.removeEventListener("focus",refetch); document.removeEventListener("visibilitychange",refetch); };
+  },[]);
 
   const countOf=id=>comps.filter(c=>c.task_id===id).length;
   const tierTasks=t=>tasks.filter(x=>x.tier===t);
@@ -258,22 +268,32 @@ function Student({session,enrollment,profile}){
     await sb.from("enrollments").update({opted_in:nv}).eq("id",enr.id);
     loadBoard();
   };
+  const toggleSaved=async(task)=>{
+    const on=savedIds.has(task.id);
+    setSavedIds(s=>{ const n=new Set(s); on?n.delete(task.id):n.add(task.id); return n; });
+    if(on) await sb.from("saved_tasks").delete().eq("enrollment_id",enr.id).eq("task_id",task.id);
+    else await sb.from("saved_tasks").insert({enrollment_id:enr.id,task_id:task.id});
+  };
 
   if(!ready) return <Splash/>;
 
   return <div style={{maxWidth:440,margin:"0 auto",minHeight:"100vh",background:T.bg,position:"relative",paddingBottom:78}}>
     <Header animal={enr.animal_nickname} points={projectPoints}/>
-    {notes.length>0 && <div style={{padding:"10px 14px 0"}}>
-      {notes.map(n=><div key={n.id} style={{display:"flex",alignItems:"flex-start",gap:10,background:"#EFEDF7",border:`1px solid ${T.line}`,borderRadius:13,padding:"11px 13px",marginBottom:8}}>
-        <span style={{flexShrink:0,marginTop:1}}><IBell s={16} c={T.anchor}/></span>
-        <div style={{flex:1,fontSize:13,color:T.ink,lineHeight:1.5}}>{n.message||"A note from your instructor."}</div>
+    {notes.length>0 && <div style={{padding:"12px 14px 0"}}>
+      {notes.map(n=><div key={n.id} style={{display:"flex",alignItems:"flex-start",gap:11,background:"#fff",border:`1px solid ${T.line}`,borderLeft:`4px solid ${T.coral}`,borderRadius:13,padding:"12px 14px",marginBottom:8,boxShadow:"0 6px 18px -10px rgba(238,99,71,.5)",animation:"fade .25s ease"}}>
+        <span style={{flexShrink:0,width:30,height:30,borderRadius:9,background:T.coralSoft,display:"grid",placeItems:"center"}}><IBell s={16} c={T.coral}/></span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:12,fontWeight:700,color:T.coral,letterSpacing:.3,textTransform:"uppercase",marginBottom:2}}>Message from your instructor</div>
+          <div style={{fontSize:13.5,color:T.ink,lineHeight:1.5}}>{n.message||"Checking in on your progress."}</div>
+        </div>
         <button onClick={()=>dismissNote(n.id)} style={{background:"none",border:"none",cursor:"pointer",color:T.inkSoft,fontSize:13,fontWeight:600,fontFamily:"inherit",flexShrink:0}}>Dismiss</button>
       </div>)}
     </div>}
-    {view==="challenges" && <Challenges {...{tasks,tier,setTier,filter,setFilter,sched,isLocked,tierTasks,countOf,uniqueCore,setOpen}}/>}
+    {view==="challenges" && <Challenges {...{tasks,tier,setTier,filter,setFilter,sched,isLocked,tierTasks,countOf,uniqueCore,setOpen,savedIds,toggleSaved}}/>}
+    {view==="list" && <MyListView {...{tasks,savedIds,countOf,isLocked,setOpen,toggleSaved}}/>}
     {view==="leaderboard" && <LeaderboardView board={board} optIn={optIn} toggleOptIn={toggleOptIn} myId={enr.id}/>}
     {view==="me" && <MeView {...{projectPoints,myBoardPts,uniqueCore,optIn,name:profile?.name,animal:enr.animal_nickname,section}}/>}
-    {open && <TaskSheet task={open} count={countOf(open.id)} locked={isLocked(open.tier)} close={()=>setOpen(null)} complete={complete} undo={undo} sched={sched}/>}
+    {open && <TaskSheet task={open} count={countOf(open.id)} locked={isLocked(open.tier)} close={()=>setOpen(null)} complete={complete} undo={undo} sched={sched} saved={savedIds.has(open.id)} onToggleSave={toggleSaved}/>}
     <BottomNav view={view} setView={setView}/>
     {toast && <div className="lg-toast" style={{position:"fixed",bottom:90,left:"50%",transform:"translateX(-50%)",background:T.anchorDeep,color:"#fff",padding:"11px 17px",borderRadius:12,fontSize:13.5,fontWeight:500,display:"flex",alignItems:"center",gap:8,zIndex:60,maxWidth:380,boxShadow:"0 14px 34px -10px rgba(40,30,80,.6)"}}><ICheck s={15} c="#fff"/> {toast}</div>}
   </div>;
@@ -297,7 +317,7 @@ function Header({animal,points}){
   </div>;
 }
 
-function Challenges({tasks,tier,setTier,filter,setFilter,sched,isLocked,tierTasks,countOf,uniqueCore,setOpen}){
+function Challenges({tasks,tier,setTier,filter,setFilter,sched,isLocked,tierTasks,countOf,uniqueCore,setOpen,savedIds,toggleSaved}){
   const m=tierMeta[tier]; const locked=isLocked(tier);
   const list=tierTasks(tier).filter(t=>filter==="All"||t.relationship_type===filter);
   const rels=["All",...relOrder.filter(r=>tierTasks(tier).some(t=>t.relationship_type===r))];
@@ -332,14 +352,14 @@ function Challenges({tasks,tier,setTier,filter,setFilter,sched,isLocked,tierTask
     </div>
 
     <div style={{display:"flex",flexDirection:"column",gap:10,marginTop:6}}>
-      {list.map(t=><TaskCard key={t.id} task={t} count={countOf(t.id)} locked={locked} onClick={()=>setOpen(t)}/>)}
+      {list.map(t=><TaskCard key={t.id} task={t} count={countOf(t.id)} locked={locked} onClick={()=>setOpen(t)} saved={savedIds.has(t.id)} onToggleSave={toggleSaved}/>)}
     </div>
   </div>;
 }
 
-function TaskCard({task,count,locked,onClick}){
+function TaskCard({task,count,locked,onClick,saved,onToggleSave}){
   const done=count>0; const m=tierMeta[task.tier];
-  return <button onClick={onClick} className="lg-press" style={{textAlign:"left",background:task.core_or_bonus==="Bonus"?"#FAF2D8":T.surface,border:`1px solid ${done?m.c:(task.core_or_bonus==="Bonus"?"#E8D9A8":T.line)}`,borderRadius:15,padding:"14px 15px",cursor:"pointer",display:"flex",gap:12,alignItems:"center",fontFamily:"inherit",opacity:locked?.65:1}}>
+  return <div onClick={onClick} className="lg-press" role="button" style={{textAlign:"left",background:task.core_or_bonus==="Bonus"?"#FAF2D8":T.surface,border:`1px solid ${done?m.c:(task.core_or_bonus==="Bonus"?"#E8D9A8":T.line)}`,borderRadius:15,padding:"14px 15px",cursor:"pointer",display:"flex",gap:12,alignItems:"center",fontFamily:"inherit",opacity:locked?.65:1}}>
     <div style={{flexShrink:0,width:42,height:42,borderRadius:11,background:done?m.c:m.tint,display:"grid",placeItems:"center",color:done?"#fff":m.c,fontWeight:800,fontSize:done?16:14}}>
       {done?<ICheck s={20} c="#fff"/>:`+${task.points}`}
     </div>
@@ -348,15 +368,16 @@ function TaskCard({task,count,locked,onClick}){
       <div style={{display:"flex",alignItems:"center",gap:7,marginTop:5,flexWrap:"wrap"}}>
         <span style={{fontSize:11,fontWeight:600,color:T.anchor,background:"#EFEDF7",padding:"2px 8px",borderRadius:6}}>{relShort(task.relationship_type)}</span>
         <span style={{fontSize:11,color:fmtColor(task.format),fontWeight:600}}>· {task.format}</span>
-        {count>1 && <span style={{fontSize:11,color:T.inkSoft,display:"flex",alignItems:"center",gap:3,marginLeft:"auto"}}><IRepeat s={12}/>{count}×</span>}
+        {count>1 && <span style={{fontSize:11,color:T.inkSoft,display:"flex",alignItems:"center",gap:3}}><IRepeat s={12}/>{count}×</span>}
       </div>
     </div>
-  </button>;
+    {onToggleSave && <button onClick={e=>{e.stopPropagation();onToggleSave(task);}} aria-label={saved?"Remove from My List":"Save to My List"} className="lg-press" style={{flexShrink:0,alignSelf:"flex-start",background:"none",border:"none",cursor:"pointer",padding:4,margin:"-2px -4px 0 0"}}><IBookmark s={19} c={saved?T.coral:T.inkSoft} fill={saved?T.coral:"none"}/></button>}
+  </div>;
 }
 
 const Tag=({children,c=T.anchor,bg="#EFEDF7"})=> <span style={{fontSize:11.5,fontWeight:700,color:c,background:bg,padding:"3px 9px",borderRadius:7}}>{children}</span>;
 
-function TaskSheet({task,count,locked,close,complete,undo,sched}){
+function TaskSheet({task,count,locked,close,complete,undo,sched,saved,onToggleSave}){
   const m=tierMeta[task.tier];
   const Row=({label,children})=> children ? <div style={{marginTop:16}}>
     <div style={{fontSize:11,fontWeight:700,color:m.c,letterSpacing:.5,textTransform:"uppercase",marginBottom:4}}>{label}</div>
@@ -365,7 +386,10 @@ function TaskSheet({task,count,locked,close,complete,undo,sched}){
     <div onClick={e=>e.stopPropagation()} className="lg-scroll" style={{background:"#fff",width:"100%",maxWidth:440,maxHeight:"92vh",overflowY:"auto",borderRadius:"22px 22px 0 0",padding:"8px 0 24px"}}>
       <div style={{display:"flex",justifyContent:"center",padding:"6px 0"}}><div style={{width:40,height:5,borderRadius:5,background:T.line}}/></div>
       <div style={{padding:"6px 20px 0"}}>
-        <button onClick={close} style={{display:"flex",alignItems:"center",gap:4,background:"none",border:"none",cursor:"pointer",color:T.inkSoft,fontSize:13.5,fontFamily:"inherit",padding:"4px 0"}}><IBack s={16}/> Back</button>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <button onClick={close} style={{display:"flex",alignItems:"center",gap:4,background:"none",border:"none",cursor:"pointer",color:T.inkSoft,fontSize:13.5,fontFamily:"inherit",padding:"4px 0"}}><IBack s={16}/> Back</button>
+          {onToggleSave && <button onClick={()=>onToggleSave(task)} className="lg-press" style={{display:"flex",alignItems:"center",gap:6,background:saved?T.coralSoft:"#fff",border:`1px solid ${saved?T.coral:T.line}`,borderRadius:10,padding:"7px 12px",cursor:"pointer",color:saved?T.coral:T.inkSoft,fontSize:12.5,fontWeight:600,fontFamily:"inherit"}}><IBookmark s={15} c={saved?T.coral:T.inkSoft} fill={saved?T.coral:"none"}/>{saved?"Saved":"Save to My List"}</button>}
+        </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap",margin:"10px 0 6px"}}>
           <Tag c="#fff" bg={m.c}>{task.tier} · +{task.points}</Tag>
           <Tag>{relShort(task.relationship_type)}</Tag>
@@ -445,10 +469,30 @@ function MeView({projectPoints,myBoardPts,uniqueCore,optIn,name,animal,section})
   </div>;
 }
 
+function MyListView({tasks,savedIds,countOf,isLocked,setOpen,toggleSaved}){
+  const saved=tasks.filter(t=>savedIds.has(t.id));
+  return <div style={{padding:"18px 16px"}}>
+    <h2 style={{fontFamily:"'Fraunces',serif",fontSize:22,marginBottom:4}}>My List</h2>
+    <p style={{color:T.inkSoft,fontSize:13,marginBottom:16,lineHeight:1.5}}>The tasks you bookmarked, so you can jump straight to the ones you want. Tap the bookmark on any task to add or remove it.</p>
+    {saved.length===0 ? <Empty>Nothing saved yet. Browse Challenges and tap the bookmark on any task you want to try.</Empty> :
+      tiers.map(tier=>{
+        const items=saved.filter(t=>t.tier===tier);
+        if(items.length===0) return null;
+        const m=tierMeta[tier];
+        return <div key={tier} style={{marginBottom:16}}>
+          <div style={{fontSize:12,fontWeight:700,color:m.c,letterSpacing:.4,textTransform:"uppercase",marginBottom:8}}>{tier}</div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {items.map(t=><TaskCard key={t.id} task={t} count={countOf(t.id)} locked={isLocked(t.tier)} onClick={()=>setOpen(t)} saved={true} onToggleSave={toggleSaved}/>)}
+          </div>
+        </div>;
+      })}
+  </div>;
+}
+
 function BottomNav({view,setView}){
-  const items=[["challenges","Challenges",ICompass],["leaderboard","Leaderboard",ITrophy],["me","Me",IUser]];
+  const items=[["challenges","Challenges",ICompass],["list","My List",IBookmark],["leaderboard","Board",ITrophy],["me","Me",IUser]];
   return <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:440,background:"#fff",borderTop:`1px solid ${T.line}`,display:"flex",zIndex:40}}>
-    {items.map(([k,label,Icon])=>{const a=view===k;return <button key={k} className="lg-press" onClick={()=>setView(k)} style={{flex:1,padding:"11px 0 13px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,color:a?T.anchor:T.inkSoft}}><Icon s={21} c={a?T.anchor:T.inkSoft}/><span style={{fontSize:11,fontWeight:a?700:500}}>{label}</span></button>;})}
+    {items.map(([k,label,Icon])=>{const a=view===k;return <button key={k} className="lg-press" onClick={()=>setView(k)} style={{flex:1,padding:"11px 0 13px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,color:a?T.anchor:T.inkSoft}}><Icon s={21} c={a?T.anchor:T.inkSoft}/><span style={{fontSize:11,fontWeight:a?700:500,whiteSpace:"nowrap"}}>{label}</span></button>;})}
   </div>;
 }
 
@@ -606,6 +650,12 @@ function SectionDetail({section,count,onBack,showToast}){
     setBusy(false);
   };
   useEffect(()=>{ load(); },[section.id]);
+  const changeCode=async()=>{
+    if(!window.confirm("Generate a new join code for this section? The current code stops working right away, so anyone you still want in will need the new one.")) return;
+    const {data,error}=await sb.rpc("regenerate_join_code",{sec:section.id});
+    if(error){ showToast("Could not change code: "+error.message); return; }
+    setSec(s=>({...s,join_code:data})); showToast("New join code: "+data);
+  };
 
   return <div>
     <button onClick={onBack} style={backBtn}><IBack s={16}/> All sections</button>
@@ -614,7 +664,10 @@ function SectionDetail({section,count,onBack,showToast}){
         <h1 style={{fontFamily:"'Fraunces',serif",fontSize:24}}>{sec.course_code} · Sec {sec.section_number}</h1>
         <div style={{fontSize:13,color:T.inkSoft,marginTop:3}}>{sec.meeting||"No meeting time"} · {count} students</div>
       </div>
-      <JoinCodeChip code={sec.join_code} onCopied={()=>showToast("Join code copied")}/>
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <JoinCodeChip code={sec.join_code} onCopied={()=>showToast("Join code copied")}/>
+        <button className="lg-press" onClick={changeCode} style={miniBtn}>Change</button>
+      </div>
     </div>
     <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
       {[["roster","Roster"],["schedule","Schedule"],["settings","Settings"]].map(([k,l])=>
