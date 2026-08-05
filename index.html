@@ -36,6 +36,10 @@ input,button{font-family:inherit}
 .lg-toast{animation:pop .25s ease}
 @keyframes pop{from{transform:translate(-50%,12px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
 @keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes confetti{0%{transform:translateY(0) rotate(0);opacity:1}100%{transform:translateY(72vh) rotate(420deg);opacity:0}}
+.lg-confetti{animation-name:confetti;animation-timing-function:linear;animation-fill-mode:forwards}
+@keyframes cele{0%{transform:scale(.7);opacity:0}60%{transform:scale(1.04)}100%{transform:scale(1);opacity:1}}
+.lg-cele{animation:cele .35s ease}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -215,6 +219,7 @@ function Student({session,enrollment,profile}){
   const [notes,setNotes]=useState([]);
   const [savedIds,setSavedIds]=useState(new Set());
   const [optIn,setOptIn]=useState(enr.opted_in);
+  const [celebrate,setCelebrate]=useState(null);
   const [ready,setReady]=useState(false);
   const [view,setView]=useState("challenges");
   const [tier,setTier]=useState("Easy");
@@ -253,7 +258,7 @@ function Student({session,enrollment,profile}){
     const {error}=await sb.from("completions").insert({enrollment_id:enr.id,task_id:task.id});
     if(error){ showToast("Could not save, try again"); return; }
     await loadComps(); loadBoard();
-    showToast(repeat?`+${task.points} to the leaderboard, nice rep!`:"Logged! Now finish this entry in your Canvas logbook.");
+    setCelebrate({pts:task.points,repeat:!!repeat});
   };
   const undo=async(task)=>{
     const mine=comps.filter(c=>c.task_id===task.id);
@@ -294,9 +299,10 @@ function Student({session,enrollment,profile}){
     {view==="list" && <MyListView {...{tasks,savedIds,countOf,isLocked,setOpen,toggleSaved}}/>}
     {view==="toolkit" && <Toolkit/>}
     {view==="leaderboard" && <LeaderboardView board={board} optIn={optIn} toggleOptIn={toggleOptIn} myId={enr.id}/>}
-    {view==="me" && <MeView {...{projectPoints,myBoardPts,uniqueCore,optIn,name:profile?.name,animal:enr.animal_nickname,section}}/>}
+    {view==="me" && <MeView {...{projectPoints,myBoardPts,uniqueCore,optIn,name:profile?.name,animal:enr.animal_nickname,section,isLocked,sched}}/>}
     {open && <TaskSheet task={open} count={countOf(open.id)} locked={isLocked(open.tier)} close={()=>setOpen(null)} complete={complete} undo={undo} sched={sched} saved={savedIds.has(open.id)} onToggleSave={toggleSaved}/>}
     <BottomNav view={view} setView={setView}/>
+    {celebrate && <Celebration pts={celebrate.pts} onDone={()=>setCelebrate(null)}/>}
     {toast && <div className="lg-toast" style={{position:"fixed",bottom:90,left:"50%",transform:"translateX(-50%)",background:T.anchorDeep,color:"#fff",padding:"11px 17px",borderRadius:12,fontSize:13.5,fontWeight:500,display:"flex",alignItems:"center",gap:8,zIndex:60,maxWidth:380,boxShadow:"0 14px 34px -10px rgba(40,30,80,.6)"}}><ICheck s={15} c="#fff"/> {toast}</div>}
   </div>;
 }
@@ -446,7 +452,10 @@ function LeaderboardView({board,optIn,toggleOptIn,myId}){
   </div>;
 }
 
-function MeView({projectPoints,myBoardPts,uniqueCore,optIn,name,animal,section}){
+function MeView({projectPoints,myBoardPts,uniqueCore,optIn,name,animal,section,isLocked,sched}){
+  const done=t=>Math.min(uniqueCore(t),tierMeta[t].req);
+  const allDone=tiers.every(t=>done(t)>=tierMeta[t].req);
+  const current=tiers.find(t=>!isLocked(t) && done(t)<tierMeta[t].req);
   return <div style={{padding:"18px 16px"}}>
     <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:18}}>
       <div style={{width:56,height:56,borderRadius:"50%",background:`linear-gradient(135deg,${T.coralSoft},#EDE8FA)`,display:"grid",placeItems:"center"}}><IUser s={26} c={T.anchor}/></div>
@@ -460,14 +469,58 @@ function MeView({projectPoints,myBoardPts,uniqueCore,optIn,name,animal,section})
       <Stat label="Leaderboard points" value={myBoardPts} c={T.medium}/>
     </div>
     <div style={{fontSize:12.5,color:T.inkSoft,lineHeight:1.5,margin:"4px 2px 16px"}}>Project points come only from required tasks and decide your grade. Leaderboard points also include repeats and bonus tasks.</div>
-    <div style={{background:T.surface,border:`1px solid ${T.line}`,borderRadius:14,padding:"14px 16px"}}>
-      <div style={{fontSize:12,fontWeight:700,letterSpacing:.4,textTransform:"uppercase",color:T.ink,marginBottom:10}}>Progress toward your grade</div>
-      {tiers.map(t=>{const m=tierMeta[t];const n=Math.min(uniqueCore(t),m.req);return <div key={t} style={{margin:"10px 0"}}>
-        <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,marginBottom:4}}><span style={{fontWeight:600}}>{t}</span><span style={{color:T.inkSoft}}>{n}/{m.req}</span></div>
-        <div style={{height:7,borderRadius:6,background:T.line,overflow:"hidden"}}><div style={{height:"100%",width:`${n/m.req*100}%`,background:m.c,borderRadius:6}}/></div>
-      </div>;})}
+    <div style={{fontSize:13.5,fontWeight:600,margin:"0 2px 12px",color:T.ink}}>
+      {allDone ? "You've reached Full Reach. Every tier complete."
+        : current ? <>You're working through <span style={{color:tierMeta[current].c}}>{current}</span>, {tierMeta[current].label}.</>
+        : "Your next tier unlocks soon."}
     </div>
+    <Journey uniqueCore={uniqueCore} isLocked={isLocked} sched={sched}/>
     <button className="lg-press" onClick={()=>sb.auth.signOut()} style={{width:"100%",marginTop:16,padding:12,borderRadius:12,border:`1px solid ${T.line}`,background:"#fff",cursor:"pointer",color:T.inkSoft,fontSize:13.5,fontWeight:600,fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><IOut s={16}/> Log out</button>
+  </div>;
+}
+
+function Journey({uniqueCore,isLocked,sched}){
+  const done=t=>Math.min(uniqueCore(t),tierMeta[t].req);
+  return <div style={{background:T.surface,border:`1px solid ${T.line}`,borderRadius:16,padding:"18px 16px 8px"}}>
+    <div style={{fontSize:12,fontWeight:700,letterSpacing:.4,textTransform:"uppercase",color:T.ink,marginBottom:16}}>Your journey</div>
+    {tiers.map((t,i)=>{
+      const m=tierMeta[t]; const n=done(t); const isDone=n>=m.req; const locked=isLocked(t); const last=i===tiers.length-1;
+      return <div key={t} style={{display:"flex",gap:14}}>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",width:58}}>
+          {locked
+            ? <div style={{width:58,height:58,borderRadius:"50%",border:`3px solid ${T.line}`,display:"grid",placeItems:"center",flexShrink:0}}><ILock s={20} c={T.inkSoft}/></div>
+            : <div style={{position:"relative",flexShrink:0}}><Ring value={n} max={m.req} color={m.c}/>{isDone && <div style={{position:"absolute",right:-1,bottom:-1,width:22,height:22,borderRadius:"50%",background:m.c,display:"grid",placeItems:"center",border:"2px solid #fff"}}><ICheck s={12} c="#fff"/></div>}</div>}
+          {!last && <div style={{flex:1,width:3,minHeight:22,background:isDone?m.c:T.line,borderRadius:2,margin:"3px 0"}}/>}
+        </div>
+        <div style={{flex:1,paddingTop:8,paddingBottom:last?8:16}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <span style={{fontSize:15,fontWeight:700,color:locked?T.inkSoft:T.ink}}>{t}</span>
+            <span style={{fontSize:11,fontWeight:600,color:locked?T.inkSoft:m.c,background:locked?T.bg:m.tint,padding:"2px 8px",borderRadius:6}}>{m.label}</span>
+          </div>
+          <div style={{fontSize:12.5,color:T.inkSoft,marginTop:4}}>
+            {locked ? (sched&&sched[t]&&sched[t].unlock_date ? `Unlocks ${sched[t].unlock_date}` : "Locked for now")
+                    : isDone ? "Complete. Nice work." : `${n} of ${m.req} core tasks done`}
+          </div>
+        </div>
+      </div>;
+    })}
+  </div>;
+}
+
+function Celebration({pts,onDone}){
+  useEffect(()=>{ const t=setTimeout(onDone,1600); return ()=>clearTimeout(t); },[]);
+  const colors=[T.coral,T.easy,T.medium,T.hard,T.expert];
+  const bits=useMemo(()=>Array.from({length:18},(_,i)=>({left:8+Math.random()*84,delay:Math.random()*0.25,color:colors[i%colors.length],dur:0.9+Math.random()*0.7})),[]);
+  return <div style={{position:"fixed",inset:0,zIndex:80,display:"grid",placeItems:"center",pointerEvents:"none"}}>
+    <div style={{position:"absolute",inset:0,overflow:"hidden"}}>
+      {bits.map((b,i)=><div key={i} className="lg-confetti" style={{position:"absolute",top:"36%",left:`${b.left}%`,width:9,height:14,background:b.color,borderRadius:2,animationDelay:`${b.delay}s`,animationDuration:`${b.dur}s`}}/>)}
+    </div>
+    <div className="lg-cele" style={{background:"#fff",borderRadius:20,padding:"22px 26px",textAlign:"center",boxShadow:"0 24px 60px -24px rgba(40,30,80,.45)",maxWidth:240}}>
+      <div style={{width:58,height:58,borderRadius:"50%",background:`linear-gradient(135deg,${T.coral},${T.expert})`,display:"grid",placeItems:"center",margin:"0 auto 10px"}}><ICheck s={28} c="#fff"/></div>
+      <div style={{fontFamily:"'Fraunces',serif",fontSize:22}}>Logged!</div>
+      <div style={{fontSize:14,color:T.coral,fontWeight:700,marginTop:2}}>+{pts} points</div>
+      <div style={{fontSize:12.5,color:T.inkSoft,marginTop:6,lineHeight:1.45}}>That's a real rep. Add the details to your Canvas logbook.</div>
+    </div>
   </div>;
 }
 
