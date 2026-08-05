@@ -508,7 +508,7 @@ function Journey({uniqueCore,isLocked,sched}){
 }
 
 function Celebration({pts,onDone}){
-  useEffect(()=>{ const t=setTimeout(onDone,1600); return ()=>clearTimeout(t); },[]);
+  useEffect(()=>{ const t=setTimeout(onDone,2600); return ()=>clearTimeout(t); },[]);
   const colors=[T.coral,T.easy,T.medium,T.hard,T.expert];
   const bits=useMemo(()=>Array.from({length:18},(_,i)=>({left:8+Math.random()*84,delay:Math.random()*0.25,color:colors[i%colors.length],dur:0.9+Math.random()*0.7})),[]);
   return <div style={{position:"fixed",inset:0,zIndex:80,display:"grid",placeItems:"center",pointerEvents:"none"}}>
