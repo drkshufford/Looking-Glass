@@ -799,6 +799,15 @@ function SectionDetail({section,count,onBack,showToast}){
     if(error){ showToast("Could not change code: "+error.message); return; }
     setSec(s=>({...s,join_code:data})); showToast("New join code: "+data);
   };
+  const deleteSection=async()=>{
+    const warn = count>0
+      ? `Delete "${sec.course_code} Sec ${sec.section_number}"? This section has ${count} student${count===1?"":"s"}, and deleting it permanently erases their enrollment and progress. This cannot be undone.`
+      : `Delete "${sec.course_code} Sec ${sec.section_number}"? This cannot be undone.`;
+    if(!window.confirm(warn)) return;
+    const {error}=await sb.from("sections").delete().eq("id",section.id);
+    if(error){ showToast("Could not delete: "+error.message); return; }
+    showToast("Section deleted"); onBack();
+  };
 
   return <div>
     <button onClick={onBack} style={backBtn}><IBack s={16}/> All sections</button>
@@ -819,7 +828,7 @@ function SectionDetail({section,count,onBack,showToast}){
     {busy ? <Splash/>
       : tab==="roster"   ? <Roster roster={roster} tasks={tasks} reload={load} showToast={showToast}/>
       : tab==="schedule" ? <Schedule sched={sched} reload={load} showToast={showToast}/>
-      :                    <Settings sec={sec} reload={load} showToast={showToast}/>}
+      :                    <Settings sec={sec} reload={load} showToast={showToast} onDelete={deleteSection}/>}
   </div>;
 }
 
@@ -952,7 +961,7 @@ function Schedule({sched,reload,showToast}){
   </div>;
 }
 
-function Settings({sec,reload,showToast}){
+function Settings({sec,reload,showToast,onDelete}){
   const [thr,setThr]=useState(String(sec.repeat_flag_threshold));
   const [days,setDays]=useState(String(sec.nudge_after_days));
   const [lbEnabled,setLbEnabled]=useState(sec.leaderboard_enabled);
@@ -976,6 +985,11 @@ function Settings({sec,reload,showToast}){
       <button className="lg-press" onClick={()=>setLbEnabled(v=>!v)} style={{padding:"7px 14px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:"inherit",background:lbEnabled?T.easy:"#F0EEF6",color:lbEnabled?"#fff":T.inkSoft,minWidth:60}}>{lbEnabled?"On":"Off"}</button>
     </div>
     <button className="lg-press" onClick={save} disabled={busy} style={{...btnPrimary,justifyContent:"center"}}>{busy?"...":"Save settings"}</button>
+    {onDelete && <div style={{marginTop:26,paddingTop:18,borderTop:`1px solid ${T.line}`}}>
+      <div style={{fontSize:12,fontWeight:700,color:"#B23B2E",letterSpacing:.3,textTransform:"uppercase",marginBottom:6}}>Danger zone</div>
+      <p style={{fontSize:12.5,color:T.inkSoft,lineHeight:1.5,margin:"0 0 10px"}}>Deleting a section permanently removes it along with every student's enrollment and progress in it. Best used for test sections.</p>
+      <button className="lg-press" onClick={onDelete} style={{padding:"9px 14px",borderRadius:11,border:"1px solid #E7B1A8",background:"#FBE7E1",color:"#B23B2E",cursor:"pointer",fontWeight:700,fontSize:13.5,fontFamily:"inherit"}}>Delete this section</button>
+    </div>}
   </div>;
 }
 
