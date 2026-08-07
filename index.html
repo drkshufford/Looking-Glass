@@ -90,6 +90,7 @@ const ICopy=(p)=><Svg {...p}><rect x="9" y="9" width="13" height="13" rx="2"/><p
 const IChevR=(p)=><Svg {...p}><polyline points="9 18 15 12 9 6"/></Svg>;
 const IBookmark=({s=18,c="currentColor",fill="none"})=> <svg width={s} height={s} viewBox="0 0 24 24" fill={fill} stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>;
 const IChat=(p)=><Svg {...p}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></Svg>;
+const IEdit=(p)=><Svg {...p}><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></Svg>;
 
 /* ============ ROOT ============ */
 function App(){
@@ -285,6 +286,7 @@ function Student({session,enrollment,profile}){
 
   return <div style={{maxWidth:440,margin:"0 auto",minHeight:"100vh",background:T.bg,position:"relative",paddingBottom:78}}>
     <Header animal={enr.animal_nickname} points={projectPoints}/>
+    {section.archived && <div style={{margin:"12px 14px 0",padding:"11px 13px",background:T.bg,border:`1px solid ${T.line}`,borderRadius:12,fontSize:13,color:T.inkSoft,textAlign:"center",fontWeight:600,lineHeight:1.5}}>This class has ended. Your work is saved and view-only.</div>}
     {notes.length>0 && <div style={{padding:"12px 14px 0"}}>
       {notes.map(n=><div key={n.id} style={{display:"flex",alignItems:"flex-start",gap:11,background:"#fff",border:`1px solid ${T.line}`,borderLeft:`4px solid ${T.coral}`,borderRadius:13,padding:"12px 14px",marginBottom:8,boxShadow:"0 6px 18px -10px rgba(238,99,71,.5)",animation:"fade .25s ease"}}>
         <span style={{flexShrink:0,width:30,height:30,borderRadius:9,background:T.coralSoft,display:"grid",placeItems:"center"}}><IBell s={16} c={T.coral}/></span>
@@ -300,7 +302,7 @@ function Student({session,enrollment,profile}){
     {view==="toolkit" && <Toolkit/>}
     {view==="leaderboard" && <LeaderboardView board={board} optIn={optIn} toggleOptIn={toggleOptIn} myId={enr.id}/>}
     {view==="me" && <MeView {...{projectPoints,myBoardPts,uniqueCore,optIn,name:profile?.name,animal:enr.animal_nickname,section,isLocked,sched}}/>}
-    {open && <TaskSheet task={open} count={countOf(open.id)} locked={isLocked(open.tier)} close={()=>setOpen(null)} complete={complete} undo={undo} sched={sched} saved={savedIds.has(open.id)} onToggleSave={toggleSaved}/>}
+    {open && <TaskSheet task={open} count={countOf(open.id)} locked={isLocked(open.tier)} close={()=>setOpen(null)} complete={complete} undo={undo} sched={sched} saved={savedIds.has(open.id)} onToggleSave={toggleSaved} readOnly={!!section.archived}/>}
     <BottomNav view={view} setView={setView}/>
     {celebrate && <Celebration pts={celebrate.pts} onDone={()=>setCelebrate(null)}/>}
     {toast && <div className="lg-toast" style={{position:"fixed",bottom:90,left:"50%",transform:"translateX(-50%)",background:T.anchorDeep,color:"#fff",padding:"11px 17px",borderRadius:12,fontSize:13.5,fontWeight:500,display:"flex",alignItems:"center",gap:8,zIndex:60,maxWidth:380,boxShadow:"0 14px 34px -10px rgba(40,30,80,.6)"}}><ICheck s={15} c="#fff"/> {toast}</div>}
@@ -385,7 +387,7 @@ function TaskCard({task,count,locked,onClick,saved,onToggleSave}){
 
 const Tag=({children,c=T.anchor,bg="#EFEDF7"})=> <span style={{fontSize:11.5,fontWeight:700,color:c,background:bg,padding:"3px 9px",borderRadius:7}}>{children}</span>;
 
-function TaskSheet({task,count,locked,close,complete,undo,sched,saved,onToggleSave}){
+function TaskSheet({task,count,locked,close,complete,undo,sched,saved,onToggleSave,readOnly}){
   const m=tierMeta[task.tier];
   const Row=({label,children})=> children ? <div style={{marginTop:16}}>
     <div style={{fontSize:11,fontWeight:700,color:m.c,letterSpacing:.5,textTransform:"uppercase",marginBottom:4}}>{label}</div>
@@ -416,6 +418,8 @@ function TaskSheet({task,count,locked,close,complete,undo,sched,saved,onToggleSa
         <div style={{marginTop:24}}>
           {locked ? (
             <div style={{textAlign:"center",padding:14,background:m.tint,borderRadius:14,color:T.ink,fontSize:13.5,fontWeight:600}}><ILock s={16} c={m.c} style={{verticalAlign:"-3px",marginRight:6}}/>This tier isn't open yet</div>
+          ) : readOnly ? (
+            <div style={{textAlign:"center",padding:14,background:T.bg,border:`1px solid ${T.line}`,borderRadius:14,color:T.inkSoft,fontSize:13.5,fontWeight:600}}>{count>0 ? `Completed${count>1?` · ${count} times`:""}. This class has ended, so it's view-only now.` : "This class has ended, so it's view-only now."}</div>
           ) : count===0 ? (
             <button className="lg-press" onClick={()=>{complete(task,false);close();}} style={{width:"100%",padding:15,borderRadius:14,border:"none",cursor:"pointer",color:"#fff",background:`linear-gradient(135deg,${m.c},${shade(m.c)})`,fontSize:15,fontWeight:700,fontFamily:"inherit"}}>I've completed this task and its logbook entry</button>
           ) : (
@@ -702,6 +706,7 @@ function Instructor({session,profile}){
   const [counts,setCounts]=useState({});
   const [openSec,setOpenSec]=useState(null);
   const [creating,setCreating]=useState(false);
+  const [showArchived,setShowArchived]=useState(false);
   const [toast,setToast]=useState(null);
   const showToast=m=>{setToast(m);setTimeout(()=>setToast(null),2800);};
 
@@ -717,23 +722,31 @@ function Instructor({session,profile}){
 
   if(sections===undefined) return <InstructorShell profile={profile}><Splash/></InstructorShell>;
 
+  const active=sections.filter(s=>!s.archived);
+  const archived=sections.filter(s=>s.archived);
+  const shown=showArchived?archived:active;
+
   return <InstructorShell profile={profile} toast={toast}>
     {openSec
       ? <SectionDetail section={openSec} count={counts[openSec.id]||0}
           onBack={()=>{ setOpenSec(null); load(); }} showToast={showToast}/>
       : <div>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18,gap:12,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,gap:12,flexWrap:"wrap"}}>
             <div>
               <div style={{fontSize:12,fontWeight:700,color:T.coral,letterSpacing:.5,textTransform:"uppercase"}}>Instructor</div>
               <h1 style={{fontFamily:"'Fraunces',serif",fontSize:26}}>Your sections</h1>
             </div>
-            <button className="lg-press" onClick={()=>setCreating(true)} style={btnPrimary}><IPlus s={16} c="#fff"/> New section</button>
+            {!showArchived && <button className="lg-press" onClick={()=>setCreating(true)} style={btnPrimary}><IPlus s={16} c="#fff"/> New section</button>}
           </div>
-          {sections.length===0 ? <Empty>No sections yet. Create your first one to get a join code for your students.</Empty> :
+          {archived.length>0 && <div style={{display:"flex",gap:8,marginBottom:16}}>
+            <button className="lg-press" onClick={()=>setShowArchived(false)} style={tabBtn(!showArchived)}>Active ({active.length})</button>
+            <button className="lg-press" onClick={()=>setShowArchived(true)} style={tabBtn(showArchived)}>Archived ({archived.length})</button>
+          </div>}
+          {shown.length===0 ? <Empty>{showArchived?"No archived sections.":"No sections yet. Create your first one to get a join code for your students."}</Empty> :
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
-              {sections.map(s=><button key={s.id} className="lg-press" onClick={()=>setOpenSec(s)} style={secCardStyle}>
+              {shown.map(s=><button key={s.id} className="lg-press" onClick={()=>setOpenSec(s)} style={secCardStyle}>
                 <div style={{flex:1,minWidth:0,textAlign:"left"}}>
-                  <div style={{fontSize:16,fontWeight:700}}>{s.course_code} · Sec {s.section_number}</div>
+                  <div style={{fontSize:16,fontWeight:700,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>{s.course_code} · Sec {s.section_number}{s.archived && <span style={{fontSize:10.5,fontWeight:700,color:T.inkSoft,background:T.bg,border:`1px solid ${T.line}`,padding:"2px 7px",borderRadius:6,letterSpacing:.3,textTransform:"uppercase"}}>Archived</span>}</div>
                   <div style={{fontSize:13,color:T.inkSoft,marginTop:2}}>{s.meeting||"No meeting time set"}</div>
                 </div>
                 <div style={{textAlign:"right"}}>
@@ -753,10 +766,11 @@ function CreateSection({onClose,onCreated}){
   const [course,setCourse]=useState("COM 100");
   const [secNum,setSecNum]=useState("");
   const [meeting,setMeeting]=useState("");
+  const [code,setCode]=useState("");
   const [busy,setBusy]=useState(false); const [err,setErr]=useState("");
   const go=async()=>{
     setErr(""); setBusy(true);
-    const {data,error}=await sb.rpc("create_section",{p_course:course.trim(),p_section:secNum.trim(),p_meeting:meeting.trim()});
+    const {data,error}=await sb.rpc("create_section",{p_course:course.trim(),p_section:secNum.trim(),p_meeting:meeting.trim(),p_code:code.trim()||null});
     setBusy(false);
     if(error){ setErr(error.message); return; }
     const row=Array.isArray(data)?data[0]:data;
@@ -766,8 +780,31 @@ function CreateSection({onClose,onCreated}){
     <Field label="Course code" value={course} onChange={setCourse} placeholder="COM 100"/>
     <Field label="Section number" value={secNum} onChange={setSecNum} placeholder="1001"/>
     <Field label="Meeting time (optional)" value={meeting} onChange={setMeeting} placeholder="MW 9:00 AM"/>
+    <Field label="Join code (optional)" value={code} onChange={setCode} placeholder="Blank for a random code"/>
     {err && <Msg c={T.coral}>{err}</Msg>}
     <button className="lg-press" onClick={go} disabled={busy||!secNum} style={{...btnPrimary,width:"100%",marginTop:14,justifyContent:"center",opacity:secNum?1:.5}}>{busy?"...":"Create section"}</button>
+  </Modal>;
+}
+
+function EditSection({sec,onClose,onSaved}){
+  const [course,setCourse]=useState(sec.course_code||"");
+  const [secNum,setSecNum]=useState(sec.section_number||"");
+  const [meeting,setMeeting]=useState(sec.meeting||"");
+  const [busy,setBusy]=useState(false); const [err,setErr]=useState("");
+  const save=async()=>{
+    setErr(""); setBusy(true);
+    const patch={course_code:course.trim(),section_number:secNum.trim(),meeting:meeting.trim()||null};
+    const {error}=await sb.from("sections").update(patch).eq("id",sec.id);
+    setBusy(false);
+    if(error){ setErr(error.message); return; }
+    onSaved(patch);
+  };
+  return <Modal onClose={onClose} title="Edit section details">
+    <Field label="Course code" value={course} onChange={setCourse} placeholder="COM 100"/>
+    <Field label="Section number" value={secNum} onChange={setSecNum} placeholder="1001"/>
+    <Field label="Meeting time (optional)" value={meeting} onChange={setMeeting} placeholder="MW 9:00 AM"/>
+    {err && <Msg c={T.coral}>{err}</Msg>}
+    <button className="lg-press" onClick={save} disabled={busy||!secNum} style={{...btnPrimary,width:"100%",marginTop:14,justifyContent:"center",opacity:secNum?1:.5}}>{busy?"...":"Save changes"}</button>
   </Modal>;
 }
 
@@ -778,6 +815,8 @@ function SectionDetail({section,count,onBack,showToast}){
   const [tasks,setTasks]=useState([]);
   const [sec,setSec]=useState(section);
   const [busy,setBusy]=useState(true);
+  const [changing,setChanging]=useState(false);
+  const [editing,setEditing]=useState(false);
   const load=async()=>{
     const order={Easy:0,Medium:1,Hard:2,Expert:3};
     const [{data:r},{data:s},{data:sc},{data:tk}]=await Promise.all([
@@ -793,11 +832,10 @@ function SectionDetail({section,count,onBack,showToast}){
     setBusy(false);
   };
   useEffect(()=>{ load(); },[section.id]);
-  const changeCode=async()=>{
-    if(!window.confirm("Generate a new join code for this section? The current code stops working right away, so anyone you still want in will need the new one.")) return;
-    const {data,error}=await sb.rpc("regenerate_join_code",{sec:section.id});
-    if(error){ showToast("Could not change code: "+error.message); return; }
-    setSec(s=>({...s,join_code:data})); showToast("New join code: "+data);
+  const archiveSection=async(val)=>{
+    const {error}=await sb.from("sections").update({archived:val}).eq("id",section.id);
+    if(error){ showToast("Could not "+(val?"archive":"unarchive")+": "+error.message); return; }
+    showToast(val?"Section archived":"Section unarchived"); onBack();
   };
   const deleteSection=async()=>{
     const warn = count>0
@@ -813,12 +851,12 @@ function SectionDetail({section,count,onBack,showToast}){
     <button onClick={onBack} style={backBtn}><IBack s={16}/> All sections</button>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",margin:"6px 0 16px",flexWrap:"wrap",gap:12}}>
       <div>
-        <h1 style={{fontFamily:"'Fraunces',serif",fontSize:24}}>{sec.course_code} · Sec {sec.section_number}</h1>
-        <div style={{fontSize:13,color:T.inkSoft,marginTop:3}}>{sec.meeting||"No meeting time"} · {count} students</div>
+        <h1 style={{fontFamily:"'Fraunces',serif",fontSize:24,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>{sec.course_code} · Sec {sec.section_number}{sec.archived && <span style={{fontSize:11,fontWeight:700,color:T.inkSoft,background:T.bg,border:`1px solid ${T.line}`,padding:"3px 9px",borderRadius:7,letterSpacing:.3,textTransform:"uppercase"}}>Archived</span>}</h1>
+        <div style={{fontSize:13,color:T.inkSoft,marginTop:3,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span>{sec.meeting||"No meeting time"} · {count} students</span><button className="lg-press" onClick={()=>setEditing(true)} style={{background:"none",border:"none",cursor:"pointer",color:T.anchor,fontSize:12.5,fontWeight:700,fontFamily:"inherit",padding:0,display:"inline-flex",alignItems:"center",gap:4}}><IEdit s={13} c={T.anchor}/> Edit details</button></div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         <JoinCodeChip code={sec.join_code} onCopied={()=>showToast("Join code copied")}/>
-        <button className="lg-press" onClick={changeCode} style={miniBtn}>Change</button>
+        <button className="lg-press" onClick={()=>setChanging(true)} style={miniBtn}>Change</button>
       </div>
     </div>
     <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
@@ -828,8 +866,31 @@ function SectionDetail({section,count,onBack,showToast}){
     {busy ? <Splash/>
       : tab==="roster"   ? <Roster roster={roster} tasks={tasks} reload={load} showToast={showToast}/>
       : tab==="schedule" ? <Schedule sched={sched} reload={load} showToast={showToast}/>
-      :                    <Settings sec={sec} reload={load} showToast={showToast} onDelete={deleteSection}/>}
+      :                    <Settings sec={sec} reload={load} showToast={showToast} onDelete={deleteSection} onArchive={archiveSection} archived={sec.archived}/>}
+    {changing && <ChangeCodeModal sec={sec} onClose={()=>setChanging(false)} onChanged={(c)=>{ setSec(s=>({...s,join_code:c})); setChanging(false); showToast("New join code: "+c); }}/>}
+    {editing && <EditSection sec={sec} onClose={()=>setEditing(false)} onSaved={(patch)=>{ setSec(s=>({...s,...patch})); setEditing(false); showToast("Details updated"); }}/>}
   </div>;
+}
+
+function ChangeCodeModal({sec,onClose,onChanged}){
+  const [code,setCode]=useState("");
+  const [busy,setBusy]=useState(false); const [err,setErr]=useState("");
+  const apply=async(useCustom)=>{
+    setErr(""); setBusy(true);
+    const {data,error}=await sb.rpc("regenerate_join_code",{sec:sec.id,p_code:useCustom?(code.trim()||null):null});
+    setBusy(false);
+    if(error){ setErr(error.message); return; }
+    onChanged(data);
+  };
+  return <Modal onClose={onClose} title="Change join code">
+    <p style={{fontSize:12.5,color:T.inkSoft,lineHeight:1.5,marginBottom:12}}>Type your own code or generate a random one. The current code stops working right away, so anyone you still want in will need the new one.</p>
+    <Field label="New code" value={code} onChange={setCode} placeholder="e.g. COM100-SPRING"/>
+    {err && <Msg c={T.coral}>{err}</Msg>}
+    <div style={{display:"flex",gap:8,marginTop:12}}>
+      <button className="lg-press" onClick={()=>apply(true)} disabled={busy||!code.trim()} style={{...btnPrimary,flex:1,justifyContent:"center",opacity:code.trim()?1:.5}}>Use this code</button>
+      <button className="lg-press" onClick={()=>apply(false)} disabled={busy} style={{...miniBtn,justifyContent:"center",padding:"10px 14px"}}>Random</button>
+    </div>
+  </Modal>;
 }
 
 function Roster({roster,tasks,reload,showToast}){
@@ -961,7 +1022,7 @@ function Schedule({sched,reload,showToast}){
   </div>;
 }
 
-function Settings({sec,reload,showToast,onDelete}){
+function Settings({sec,reload,showToast,onDelete,onArchive,archived}){
   const [thr,setThr]=useState(String(sec.repeat_flag_threshold));
   const [days,setDays]=useState(String(sec.nudge_after_days));
   const [lbEnabled,setLbEnabled]=useState(sec.leaderboard_enabled);
@@ -985,6 +1046,11 @@ function Settings({sec,reload,showToast,onDelete}){
       <button className="lg-press" onClick={()=>setLbEnabled(v=>!v)} style={{padding:"7px 14px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:"inherit",background:lbEnabled?T.easy:"#F0EEF6",color:lbEnabled?"#fff":T.inkSoft,minWidth:60}}>{lbEnabled?"On":"Off"}</button>
     </div>
     <button className="lg-press" onClick={save} disabled={busy} style={{...btnPrimary,justifyContent:"center"}}>{busy?"...":"Save settings"}</button>
+    {onArchive && <div style={{marginTop:24,paddingTop:18,borderTop:`1px solid ${T.line}`}}>
+      <div style={{fontSize:12,fontWeight:700,color:T.ink,letterSpacing:.3,textTransform:"uppercase",marginBottom:6}}>End of semester</div>
+      <p style={{fontSize:12.5,color:T.inkSoft,lineHeight:1.5,margin:"0 0 10px"}}>{archived ? "This section is archived and hidden from your main list. Everything in it is preserved. Unarchive to bring it back." : "Archiving hides this section from your main list but keeps every record, in case a grade question comes up later. You can unarchive anytime."}</p>
+      <button className="lg-press" onClick={()=>onArchive(!archived)} style={{padding:"9px 14px",borderRadius:11,border:`1px solid ${T.line}`,background:"#fff",color:T.anchor,cursor:"pointer",fontWeight:700,fontSize:13.5,fontFamily:"inherit"}}>{archived?"Unarchive this section":"Archive this section"}</button>
+    </div>}
     {onDelete && <div style={{marginTop:26,paddingTop:18,borderTop:`1px solid ${T.line}`}}>
       <div style={{fontSize:12,fontWeight:700,color:"#B23B2E",letterSpacing:.3,textTransform:"uppercase",marginBottom:6}}>Danger zone</div>
       <p style={{fontSize:12.5,color:T.inkSoft,lineHeight:1.5,margin:"0 0 10px"}}>Deleting a section permanently removes it along with every student's enrollment and progress in it. Best used for test sections.</p>
