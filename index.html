@@ -301,7 +301,7 @@ function Student({session,enrollment,profile}){
     {view==="list" && <MyListView {...{tasks,savedIds,countOf,isLocked,setOpen,toggleSaved}}/>}
     {view==="toolkit" && <Toolkit/>}
     {view==="leaderboard" && <LeaderboardView board={board} optIn={optIn} toggleOptIn={toggleOptIn} myId={enr.id}/>}
-    {view==="me" && <MeView {...{projectPoints,myBoardPts,uniqueCore,optIn,name:profile?.name,animal:enr.animal_nickname,section,isLocked,sched}}/>}
+    {view==="me" && <MeView {...{projectPoints,myBoardPts,uniqueCore,optIn,name:profile?.name,animal:enr.animal_nickname,section,isLocked,sched,showToast}}/>}
     {open && <TaskSheet task={open} count={countOf(open.id)} locked={isLocked(open.tier)} close={()=>setOpen(null)} complete={complete} undo={undo} sched={sched} saved={savedIds.has(open.id)} onToggleSave={toggleSaved} readOnly={!!section.archived}/>}
     <BottomNav view={view} setView={setView}/>
     {celebrate && <Celebration pts={celebrate.pts} onDone={()=>setCelebrate(null)}/>}
@@ -456,7 +456,8 @@ function LeaderboardView({board,optIn,toggleOptIn,myId}){
   </div>;
 }
 
-function MeView({projectPoints,myBoardPts,uniqueCore,optIn,name,animal,section,isLocked,sched}){
+function MeView({projectPoints,myBoardPts,uniqueCore,optIn,name,animal,section,isLocked,sched,showToast}){
+  const [pwOpen,setPwOpen]=useState(false);
   const done=t=>Math.min(uniqueCore(t),tierMeta[t].req);
   const allDone=tiers.every(t=>done(t)>=tierMeta[t].req);
   const current=tiers.find(t=>!isLocked(t) && done(t)<tierMeta[t].req);
@@ -479,8 +480,32 @@ function MeView({projectPoints,myBoardPts,uniqueCore,optIn,name,animal,section,i
         : "Your next tier unlocks soon."}
     </div>
     <Journey uniqueCore={uniqueCore} isLocked={isLocked} sched={sched}/>
-    <button className="lg-press" onClick={()=>sb.auth.signOut()} style={{width:"100%",marginTop:16,padding:12,borderRadius:12,border:`1px solid ${T.line}`,background:"#fff",cursor:"pointer",color:T.inkSoft,fontSize:13.5,fontWeight:600,fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><IOut s={16}/> Log out</button>
+    <button className="lg-press" onClick={()=>setPwOpen(true)} style={{width:"100%",marginTop:16,padding:12,borderRadius:12,border:`1px solid ${T.line}`,background:"#fff",cursor:"pointer",color:T.anchor,fontSize:13.5,fontWeight:700,fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:7}}>Change password</button>
+    <button className="lg-press" onClick={()=>sb.auth.signOut()} style={{width:"100%",marginTop:10,padding:12,borderRadius:12,border:`1px solid ${T.line}`,background:"#fff",cursor:"pointer",color:T.inkSoft,fontSize:13.5,fontWeight:600,fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:7}}><IOut s={16}/> Log out</button>
+    {pwOpen && <ChangePassword onClose={()=>setPwOpen(false)} showToast={showToast}/>}
   </div>;
+}
+
+function ChangePassword({onClose,showToast}){
+  const [pw,setPw]=useState(""); const [pw2,setPw2]=useState("");
+  const [busy,setBusy]=useState(false); const [err,setErr]=useState("");
+  const save=async()=>{
+    setErr("");
+    if(pw.length<6){ setErr("Use at least 6 characters."); return; }
+    if(pw!==pw2){ setErr("The two passwords don't match."); return; }
+    setBusy(true);
+    const {error}=await sb.auth.updateUser({password:pw});
+    setBusy(false);
+    if(error){ setErr(error.message); return; }
+    showToast&&showToast("Password updated"); onClose();
+  };
+  return <Modal onClose={onClose} title="Change password">
+    <p style={{fontSize:12.5,color:T.inkSoft,lineHeight:1.5,marginBottom:12}}>Set a new password for your account. You'll use it the next time you log in.</p>
+    <Field label="New password" value={pw} onChange={setPw} type="password" placeholder="At least 6 characters"/>
+    <Field label="Confirm new password" value={pw2} onChange={setPw2} type="password" placeholder="Re-enter it"/>
+    {err && <Msg c={T.coral}>{err}</Msg>}
+    <button className="lg-press" onClick={save} disabled={busy} style={{...btnPrimary,width:"100%",marginTop:12,justifyContent:"center"}}>{busy?"...":"Update password"}</button>
+  </Modal>;
 }
 
 function Journey({uniqueCore,isLocked,sched}){
@@ -893,6 +918,9 @@ function ChangeCodeModal({sec,onClose,onChanged}){
   </Modal>;
 }
 
+const PERSONAL_EMAIL_DOMAINS=["gmail.com","yahoo.com","hotmail.com","outlook.com","icloud.com","aol.com","live.com","me.com","proton.me","protonmail.com"];
+const isPersonalEmail=(e)=>{ const d=(e||"").split("@")[1]; return !!d && PERSONAL_EMAIL_DOMAINS.includes(d.toLowerCase()); };
+
 function Roster({roster,tasks,reload,showToast}){
   const [sortKey,setSortKey]=useState("project_points");
   const [adjFor,setAdjFor]=useState(null);
@@ -904,6 +932,12 @@ function Roster({roster,tasks,reload,showToast}){
   const nudge=async(r)=>{
     const {error}=await sb.from("notifications").insert({enrollment_id:r.enrollment_id,type:"nudge",message:"Checking in. New challenges are open. Jump back in when you can."});
     showToast(error?("Could not send: "+error.message):("Nudge sent to "+r.animal_nickname));
+  };
+  const removeStudent=async(r)=>{
+    if(!window.confirm(`Remove ${r.name} from this class? This deletes their enrollment and their progress in this section. They can rejoin with the code. It does not delete their login account.`)) return;
+    const {error}=await sb.from("enrollments").delete().eq("id",r.enrollment_id);
+    if(error){ showToast("Could not remove: "+error.message); return; }
+    setDetailFor(null); showToast(r.name+" removed from class"); reload();
   };
   if(roster.length===0) return <Empty>No students have joined yet. Share the join code above to get them in.</Empty>;
   return <div>
@@ -921,6 +955,7 @@ function Roster({roster,tasks,reload,showToast}){
             {r.flagged && <span style={{fontSize:11,fontWeight:700,color:"#B23B2E",background:"#FBE3DF",padding:"2px 8px",borderRadius:6}}>Grinding · {r.max_task_reps}× one task</span>}
             {!r.opted_in && <span style={{fontSize:11,color:T.inkSoft}}>off the board</span>}
           </div>
+          {r.email && <div style={{fontSize:12,color:T.inkSoft,marginTop:4,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",wordBreak:"break-all"}}>{r.email}{isPersonalEmail(r.email) && <span style={{fontSize:10,fontWeight:700,color:"#B23B2E",background:"#FBE7E1",padding:"1px 7px",borderRadius:5,letterSpacing:.2,textTransform:"uppercase"}}>Personal</span>}</div>}
           <div style={{fontSize:12.5,color:T.inkSoft,marginTop:5,display:"flex",gap:14,flexWrap:"wrap"}}>
             <span><b style={{color:T.coral}}>{r.project_points}</b>/100 project</span>
             <span><b style={{color:T.medium}}>{r.leaderboard_points}</b> leaderboard</span>
@@ -935,11 +970,11 @@ function Roster({roster,tasks,reload,showToast}){
       </div>)}
     </div>
     {adjFor && <AdjustPoints row={adjFor} onClose={()=>setAdjFor(null)} onSaved={()=>{setAdjFor(null);reload();}} showToast={showToast}/>}
-    {detailFor && <StudentDetail row={detailFor} tasks={tasks} onClose={()=>setDetailFor(null)}/>}
+    {detailFor && <StudentDetail row={detailFor} tasks={tasks} onClose={()=>setDetailFor(null)} onRemove={removeStudent}/>}
   </div>;
 }
 
-function StudentDetail({row,tasks,onClose}){
+function StudentDetail({row,tasks,onClose,onRemove}){
   const [comps,setComps]=useState(null);
   useEffect(()=>{ (async()=>{
     const {data}=await sb.from("completions").select("task_id, completed_at").eq("enrollment_id",row.enrollment_id).order("completed_at");
@@ -953,7 +988,8 @@ function StudentDetail({row,tasks,onClose}){
   const totalCompletions=(comps||[]).length;
   return <Modal onClose={onClose} title={"What "+row.name+" has logged"}>
     {comps===null ? <div style={{display:"grid",placeItems:"center",padding:24}}><div className="lg-spin"/></div> : <div>
-      <div style={{fontSize:12.5,color:T.inkSoft,marginBottom:14,lineHeight:1.5}}>{row.animal_nickname} · {totalDistinct} {totalDistinct===1?"task":"tasks"} logged · {totalCompletions} total {totalCompletions===1?"completion":"completions"} · {row.project_points}/100 project</div>
+      <div style={{fontSize:12.5,color:T.inkSoft,marginBottom:8,lineHeight:1.5}}>{row.animal_nickname} · {totalDistinct} {totalDistinct===1?"task":"tasks"} logged · {totalCompletions} total {totalCompletions===1?"completion":"completions"} · {row.project_points}/100 project</div>
+      {row.email && <div style={{fontSize:12.5,marginBottom:14,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",wordBreak:"break-all"}}><span style={{color:T.inkSoft}}>Registered with</span> <span style={{fontWeight:600,color:T.ink}}>{row.email}</span>{isPersonalEmail(row.email) && <span style={{fontSize:10,fontWeight:700,color:"#B23B2E",background:"#FBE7E1",padding:"1px 7px",borderRadius:5,letterSpacing:.2,textTransform:"uppercase"}}>Personal</span>}</div>}
       <div className="lg-scroll" style={{maxHeight:"58vh",overflowY:"auto"}}>
         {tiers.map(tier=>{
           const items=(byTier[tier]||[]).slice().sort((a,b)=>(a.t.sort_order||0)-(b.t.sort_order||0));
@@ -975,6 +1011,10 @@ function StudentDetail({row,tasks,onClose}){
           </div>;
         })}
       </div>
+      {onRemove && <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${T.line}`}}>
+        <button className="lg-press" onClick={()=>onRemove(row)} style={{width:"100%",padding:"9px 14px",borderRadius:11,border:"1px solid #E7B1A8",background:"#FBE7E1",color:"#B23B2E",cursor:"pointer",fontWeight:700,fontSize:13.5,fontFamily:"inherit"}}>Remove from class</button>
+        <p style={{fontSize:11.5,color:T.inkSoft,lineHeight:1.5,margin:"8px 2px 0"}}>Deletes this enrollment and its progress so they can rejoin with the code. Does not delete their login account.</p>
+      </div>}
     </div>}
   </Modal>;
 }
